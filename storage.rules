@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) &&
+         firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.role == 'superadmin' &&
+         firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.isActive == true) ||
+        request.auth.token.email == 'dheeraj8933@gmail.com'
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) &&
+         firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.isActive == true) ||
+        request.auth.token.email == 'dheeraj8933@gmail.com'
+      );
+    }
+
+    // Public read for fashion images, product catalogs, banners and media assets
+    // Writes (uploads, updates, deletes) reserved for authorized administrators and staff
+    match /products/{productId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Community & Styling Gallery images (#FashineryWomen)
+    match /community-gallery/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    match /{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+  }
+}

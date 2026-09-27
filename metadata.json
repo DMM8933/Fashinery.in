@@ -1,0 +1,6 @@
+{
+  "name": "fashinery-2026",
+  "description": "Fashinery - Elegance in Every Look. Premium women's fashion ecommerce brand featuring Sarees, Lehengas, Kurtis, Dresses, and luxury ethnic wear with complete admin control.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

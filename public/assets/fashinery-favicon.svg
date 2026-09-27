@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" fill="none">
+  <defs>
+    <!-- Rose Gold Ribbon Gradient -->
+    <linearGradient id="favRibbon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9E2F4E" />
+      <stop offset="25%" stop-color="#CA6C88" />
+      <stop offset="50%" stop-color="#FFD6E2" />
+      <stop offset="75%" stop-color="#BA4F6C" />
+      <stop offset="100%" stop-color="#7B1E37" />
+    </linearGradient>
+
+    <!-- Pearl Radial Gradient -->
+    <radialGradient id="favPearl" cx="35%" cy="32%" r="68%" fx="30%" fy="28%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="20%" stop-color="#FFF0F5" />
+      <stop offset="45%" stop-color="#F5B9C9" />
+      <stop offset="70%" stop-color="#C05C77" />
+      <stop offset="90%" stop-color="#7E2038" />
+      <stop offset="100%" stop-color="#4E0F1F" />
+    </radialGradient>
+
+    <!-- Soft Ambient Shadow -->
+    <filter id="favShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#4A0E1D" flood-opacity="0.28" />
+    </filter>
+  </defs>
+
+  <!-- Clean Rounded Luxury Background Badge -->
+  <rect width="64" height="64" rx="14" fill="#FFFAF8" />
+
+  <g filter="url(#favShadow)">
+    <!-- Iconic Fashinery 'f' with Ribbon Loop -->
+    <!-- Ribbon Loop Back (Inner Fold) -->
+    <path d="M 23 20 C 22 13, 27 8, 34 8 C 41 8, 45 13, 43 20 C 41 26, 36 29, 31 29 C 27 29, 24 26, 23 20 Z" fill="#6B192E" />
+    <path d="M 24 19 C 24 14, 28 10, 34 10 C 39 10, 42 14, 41 19 C 39 24, 35 27, 31 27 C 28 27, 25 24, 24 19 Z" fill="#FFF5F8" opacity="0.45" />
+
+    <!-- Ribbon Outer Ascender and Stem -->
+    <path d="M 20 22 C 21 9, 29 4, 38 4 C 47 4, 52 11, 49 22 C 46 32, 38 36, 31 36 L 31 52 C 31 54, 29 55, 27 55 C 25 55, 23 54, 23 52 L 23 36 L 14 36 L 14 32 L 23 32 L 23 23 Z" fill="url(#favRibbon)" />
+
+    <!-- Crossbar Blade -->
+    <path d="M 12 34 L 38 34 L 38 35.5 L 12 35.5 Z" fill="#FFEBF2" />
+
+    <!-- Base Serif Foot -->
+    <path d="M 19 54 L 33 54 L 33 55.5 L 19 55.5 Z" fill="url(#favRibbon)" />
+
+    <!-- 3D Rose Gold Pearl beside ascender -->
+    <g>
+      <circle cx="47" cy="38" r="7" fill="url(#favPearl)" />
+      <!-- High Specular Highlight -->
+      <circle cx="45" cy="36" r="1.8" fill="#FFFFFF" />
+      <circle cx="44.2" cy="35.2" r="0.8" fill="#FFFFFF" />
+    </g>
+  </g>
+</svg>

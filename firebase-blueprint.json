@@ -1,0 +1,371 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrator record with role-based permissions and active status",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Authentication User ID"
+        },
+        "email": {
+          "type": "string",
+          "description": "Admin email address"
+        },
+        "name": {
+          "type": "string",
+          "description": "Admin full display name"
+        },
+        "role": {
+          "type": "string",
+          "description": "Role level",
+          "enum": ["superadmin", "admin", "editor"]
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether this administrator account is currently active"
+        },
+        "addedBy": {
+          "type": "string",
+          "description": "Email or UID of the Super Admin who authorized this account"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": ["email", "role", "isActive"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Customer profile with mandatory mobile number and optional email",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "displayName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "authEmail": { "type": "string" },
+        "hasEmail": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["customer"] },
+        "addresses": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "isBlocked": { "type": "boolean" }
+      },
+      "required": ["uid", "phone", "role"]
+    },
+    "PhoneLookup": {
+      "title": "PhoneLookup",
+      "description": "Public phone-to-authEmail mapping for seamless customer login and recovery without plaintext credentials",
+      "type": "object",
+      "properties": {
+        "phone": { "type": "string" },
+        "uid": { "type": "string" },
+        "authEmail": { "type": "string" },
+        "hasEmail": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["phone", "uid", "authEmail"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer profile alias",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "Media": {
+      "title": "Media",
+      "description": "Store asset and catalog media item",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "filename": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["url"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Fashion catalog item",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "sku": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "subCategory": { "type": "string" },
+        "brand": { "type": "string" },
+        "shortDescription": { "type": "string" },
+        "description": { "type": "string" },
+        "mrp": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "stock": { "type": "number" },
+        "lowStockThreshold": { "type": "number" },
+        "sizes": { "type": "array" },
+        "colors": { "type": "array" },
+        "colorOptions": { "type": "array" },
+        "sizeOptions": { "type": "array" },
+        "variants": { "type": "array" },
+        "fabric": { "type": "string" },
+        "images": { "type": "array" },
+        "galleryImages": { "type": "array" },
+        "featured": { "type": "boolean" },
+        "bestseller": { "type": "boolean" },
+        "newArrival": { "type": "boolean" },
+        "published": { "type": "boolean" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "slug", "mrp", "sellingPrice", "stock", "categoryId"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Fashion categories (Sarees, Lehengas, Kurtis, etc.)",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["name", "slug"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer purchase order",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string" },
+        "userId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "shippingAddress": { "type": "object" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "shippingCharge": { "type": "number" },
+        "total": { "type": "number" },
+        "couponCode": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "orderStatus": { "type": "string" },
+        "trackingUrl": { "type": "string" },
+        "courierPartner": { "type": "string" },
+        "trackingNumber": { "type": "string" },
+        "courier": { "type": "string" },
+        "notes": { "type": "string" },
+        "cancelledAt": { "type": "string" },
+        "cancellationReason": { "type": "string" },
+        "customerCancellationReason": { "type": "string" },
+        "cancellationDetails": { "type": "string" },
+        "cancelledBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["customerName", "customerEmail", "customerPhone", "items", "total", "orderStatus"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "Product review",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "isFeatured": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["productId", "userName", "rating", "comment", "status"]
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "Promotional discounts",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "discountType": { "type": "string", "enum": ["percentage", "fixed"] },
+        "discountValue": { "type": "number" },
+        "minOrderValue": { "type": "number" },
+        "maxDiscount": { "type": "number" },
+        "usageLimit": { "type": "number" },
+        "usedCount": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "validUntil": { "type": "string" }
+      },
+      "required": ["code", "discountType", "discountValue", "isActive"]
+    },
+    "Banner": {
+      "title": "Banner",
+      "description": "Hero sliders and promo banners",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "description": { "type": "string" },
+        "desktopImage": { "type": "string" },
+        "mobileImage": { "type": "string" },
+        "buttonText": { "type": "string" },
+        "buttonUrl": { "type": "string" },
+        "position": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["title", "desktopImage", "isActive"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global store configuration and branding",
+      "type": "object",
+      "properties": {
+        "businessName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "address": { "type": "string" },
+        "currency": { "type": "string" },
+        "shippingCharge": { "type": "number" },
+        "freeShippingThreshold": { "type": "number" },
+        "returnPeriodDays": { "type": "number" },
+        "announcementText": { "type": "string" },
+        "announcementLink": { "type": "string" },
+        "communityGallery": { "type": "array" }
+      },
+      "required": ["businessName", "email", "phone", "whatsapp"]
+    },
+    "Policy": {
+      "title": "Policy",
+      "description": "Store terms and policies",
+      "type": "object",
+      "properties": {
+        "slug": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["slug", "title", "content"]
+    },
+    "FAQ": {
+      "title": "FAQ",
+      "description": "Frequently asked question item",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "question": { "type": "string" },
+        "answer": { "type": "string" },
+        "sortOrder": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["category", "question", "answer"]
+    }
+  },
+  "firestore": {
+    "/faqs/{faqId}": {
+      "schema": "FAQ",
+      "description": "Frequently asked questions"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Authorized administrators"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Customer profiles and saved addresses"
+    },
+    "/phone_lookup/{phone}": {
+      "schema": "PhoneLookup",
+      "description": "Public phone-to-authEmail mapping for login and password recovery without plaintext credentials"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer records (alias)"
+    },
+    "/media/{mediaId}": {
+      "schema": "Media",
+      "description": "Media library and asset records"
+    },
+    "/homepageContent/{docId}": {
+      "schema": "Banner",
+      "description": "Homepage content and curated highlights"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Products available in the store"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Store fashion categories"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Placed orders and their fulfillment status"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Product customer reviews"
+    },
+    "/coupons/{couponId}": {
+      "schema": "Coupon",
+      "description": "Promotional discount codes"
+    },
+    "/banners/{bannerId}": {
+      "schema": "Banner",
+      "description": "Hero sliders and homepage banners"
+    },
+    "/siteSettings/{settingId}": {
+      "schema": "SiteSettings",
+      "description": "Global brand and store settings"
+    },
+    "/policies/{policyId}": {
+      "schema": "Policy",
+      "description": "Store legal and customer policies"
+    },
+    "/newsletter/{subscriberId}": {
+      "schema": { "$ref": "Newsletter" },
+      "description": "Newsletter subscribers"
+    },
+    "/contacts/{contactId}": {
+      "schema": { "$ref": "Contact" },
+      "description": "Customer contact messages"
+    },
+    "/test/{testId}": {
+      "schema": {
+        "title": "TestConnection",
+        "description": "Connection probe document",
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" }
+        }
+      },
+      "description": "Firestore connection health check document"
+    }
+  }
+}

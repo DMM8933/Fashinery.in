@@ -1,0 +1,26 @@
+# Firebase App Hosting Configuration for Fashinery
+# Docs: https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  minInstances: 0
+  maxInstances: 5
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
+
+env:
+  - variable: NODE_ENV
+    value: production
+  - variable: RAZORPAY_KEY_ID
+    secret: RAZORPAY_KEY_ID
+    availability:
+      - RUNTIME
+      - BUILD
+  - variable: RAZORPAY_KEY_SECRET
+    secret: RAZORPAY_KEY_SECRET
+    availability:
+      - RUNTIME
+  - variable: RAZORPAY_WEBHOOK_SECRET
+    secret: RAZORPAY_WEBHOOK_SECRET
+    availability:
+      - RUNTIME

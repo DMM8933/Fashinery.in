@@ -1,0 +1,212 @@
+// BACKUP OF ORIGINAL firestore.rules BEFORE VULNERABILITY FIXES
+// Saved at: 2026-09-20
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny All Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'superadmin' &&
+         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isActive == true) ||
+        (request.auth.token.email == 'dheeraj8933@gmail.com')
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isActive == true) ||
+        (request.auth.token.email == 'dheeraj8933@gmail.com')
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Health check & connection validation probe
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // Admins Collection:
+    // - Any signed-in user may read their own admin doc to verify their admin status
+    // - Authorized admins can list and read admin accounts
+    // - ONLY a verified Super Admin can create, modify (enable/disable/role), or delete admins
+    // - Absolutely NO public registration or privilege elevation
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == adminId || 
+        isAdmin() ||
+        (resource != null && resource.data.email == request.auth.token.email)
+      );
+      allow list: if isAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    // Customer Users Collection (Profiles & addresses)
+    // - Regular customer registration creates a 'customer' role only
+    // - Customers cannot self-assign an admin role or elevate privileges
+    // - Non-admin users can only view their own profile; admins can view all
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) && (
+        !request.resource.data.keys().hasAny(['role', 'isAdmin']) || 
+        request.resource.data.role == 'customer'
+      );
+      allow update: if (
+        isOwner(userId) && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isAdmin']) ||
+          request.resource.data.role == 'customer'
+        )
+      ) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Phone Lookup Collection (Maps normalized 10-digit Indian phone to authEmail & UID for login/recovery)
+    // - Individual document get is public to allow lookup during login/reset before auth
+    // - Listing all records is restricted to administrators to prevent phone number scraping
+    // - Authenticated users can write/update their own phone mapping
+    match /phone_lookup/{phone} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Customers Collection (Alias for customer profiles)
+    match /customers/{customerId} {
+      allow get: if isOwner(customerId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(customerId) && (
+        !request.resource.data.keys().hasAny(['role', 'isAdmin']) || 
+        request.resource.data.role == 'customer'
+      );
+      allow update: if (
+        isOwner(customerId) && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isAdmin']) ||
+          request.resource.data.role == 'customer'
+        )
+      ) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Products Collection (Catalog)
+    // Public read; strictly admin-only for add, edit, price, stock, delete
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Categories Collection
+    // Public read; strictly admin-only write
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Banners Collection
+    // Public read; strictly admin-only write
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Homepage Content Collections (hero, promotions, featured sections)
+    match /homepageContent/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /homepage/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /promotions/{promoId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Site Settings Collection (Branding, contact info, shipping rates)
+    match /siteSettings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Policies Collection (Shipping, returns, refunds, privacy, terms)
+    match /policies/{policyId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Coupons Collection (Discounts & Promo Codes)
+    // Public read for discount verification; strictly admin-only write
+    match /coupons/{couponId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Orders Collection
+    // - Customers can view their own orders; admins can view all orders
+    // - Order placement allowed for checkout
+    // - Status changes, tracking, fulfillment updates strictly admin-only
+    // - Customer can only cancel or request return on their own orders
+    // - Order deletion strictly admin-only
+    match /orders/{orderId} {
+      allow read: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin() || (resource.data.userId == 'guest');
+      allow create: if true;
+      allow update: if (isSignedIn() && resource.data.userId == request.auth.uid) || isAdmin() || (resource.data.userId == 'guest');
+      allow delete: if isAdmin();
+    }
+
+    // Reviews Collection
+    // Public read; customer submission allowed; moderation and deletion admin-only
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Media Collection (Asset library metadata)
+    // Public read; uploads and management strictly admin-only
+    match /media/{mediaId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // FAQs Collection
+    match /faqs/{faqId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Newsletter Subscribers
+    match /newsletter/{subscriberId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Contact Inquiries
+    match /contacts/{contactId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+  }
+}

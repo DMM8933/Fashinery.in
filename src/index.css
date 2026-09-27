@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+    font-family: var(--font-sans);
+    color: #27221f;
+    background-color: #fdfbf7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.font-display {
+  font-family: var(--font-serif);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1ede8;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4c5b9;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b59f90;
+}
+
+/* Subtle Shimmer Animation for Brand Logo Skeleton Loader */
+@keyframes logo-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-logo-shimmer {
+  animation: logo-shimmer 1.8s ease-in-out infinite;
+}
+
+/* FASHINERY Premium Opening Splash Animations */
+@keyframes splash-logo-fade-scale {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes splash-aura-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes splash-tagline-reveal {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes splash-shimmer-sweep {
+  0% {
+    transform: translateX(-130%) skewX(-20deg);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.7;
+  }
+  80% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(160%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+.animate-splash-logo {
+  animation: splash-logo-fade-scale 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-splash-glow {
+  animation: splash-aura-breathe 2.4s ease-in-out infinite;
+}
+
+.animate-splash-tagline {
+  animation: splash-tagline-reveal 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards;
+}
+
+.animate-splash-shimmer {
+  animation: splash-shimmer-sweep 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.35s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-splash-logo,
+  .animate-splash-glow,
+  .animate-splash-tagline,
+  .animate-splash-shimmer {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
+
