@@ -25,7 +25,7 @@ export const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
   onClose,
   onCancelled,
 }) => {
-  const { cancelOrder } = useStore();
+  const { requestOrderCancellation } = useStore();
 
   const [selectedReason, setSelectedReason] = useState<string>(CANCELLATION_REASONS[0]);
   const [otherReason, setOtherReason] = useState<string>('');
@@ -87,23 +87,29 @@ export const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
 
     try {
       const details = selectedReason === 'Other' ? otherReason.trim() : additionalNotes.trim();
-      await cancelOrder(order.id, selectedReason, details, 'Customer');
+      await requestOrderCancellation(order.id, selectedReason, details);
 
       setIsSuccess(true);
       if (onCancelled) {
         onCancelled({
           ...order,
-          orderStatus: 'Cancelled',
-          cancellationReason: selectedReason,
+          orderStatus: 'Cancellation Requested',
+          cancellationRequest: {
+            reason: selectedReason,
+            customReason: details,
+            requestedAt: new Date().toISOString(),
+            requestedBy: 'customer',
+            status: 'pending',
+          },
+          customerCancellationReason: selectedReason,
           cancellationDetails: details,
-          cancelledAt: new Date().toISOString(),
-          cancelledBy: 'Customer',
+          updatedAt: new Date().toISOString(),
         });
       }
     } catch (err: any) {
-      console.error('Failed to cancel order:', err);
+      console.error('Failed to request cancellation:', err);
       setErrorMessage(
-        err.message || 'Unable to cancel this order. Please try again or contact customer support.'
+        err.message || 'Unable to request cancellation for this order. Please try again.'
       );
       setIsConfirmStep(false);
     } finally {
@@ -164,14 +170,14 @@ export const CancelOrderModal: React.FC<CancelOrderModalProps> = ({
               <CheckCircle2 className="w-9 h-9" />
             </div>
             <div>
-              <span className="text-[11px] font-bold tracking-widest text-rose-700 uppercase block mb-1">
-                Order Cancelled
+              <span className="text-[11px] font-bold tracking-widest text-amber-800 uppercase block mb-1">
+                Cancellation Requested
               </span>
               <h4 className="font-serif text-xl sm:text-2xl font-bold text-stone-900">
-                Cancellation Confirmed
+                Request Submitted
               </h4>
               <p className="text-xs text-stone-600 mt-2 max-w-sm mx-auto leading-relaxed">
-                Order #{order.orderNumber} has been officially cancelled. A confirmation record has been saved and your order status is now updated.
+                Your cancellation request for Order #{order.orderNumber} has been successfully submitted and is awaiting administrator verification.
               </p>
             </div>
 

@@ -55,6 +55,11 @@ import {
   Order,
   OrderItem,
   OrderStatus,
+  OrderStatusHistoryItem,
+  PaymentHistoryItem,
+  AuditLogItem,
+  CancellationRequestInfo,
+  PaymentStatus,
   PaymentMethod,
   Policy,
   Product,
@@ -66,6 +71,7 @@ import {
   SiteSettings,
   CommunityGalleryItem,
   DEFAULT_COMMUNITY_GALLERY,
+  validateStatusTransition,
 } from '../types';
 import {
   validateIndianMobile,
@@ -166,6 +172,10 @@ interface StoreContextType {
     cancelledBy?: 'Customer' | 'Admin'
   ) => Promise<boolean>;
   requestReturn: (orderId: string, reason: string, notes?: string, returnType?: 'return' | 'exchange') => Promise<void>;
+  markOrderAsPaid: (orderId: string, reason: string, paymentMethod?: string) => Promise<void>;
+  requestOrderCancellation: (orderId: string, reason: string, customReason?: string) => Promise<void>;
+  adminApproveCancellation: (orderId: string) => Promise<void>;
+  adminRejectCancellation: (orderId: string, reason: string) => Promise<void>;
   
   // User & Authentication
   user: User | null;
@@ -1664,12 +1674,200 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           returnReason: reason,
           returnNotes: notes || '',
           returnType,
+          returnStatus: 'pending',
           returnRequestedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         })
       );
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
+    }
+  };
+
+  const markOrderAsPaid = async (orderId: string, reason: string, paymentMethod?: string) => {
+    if (!isAdmin) throw new Error('Access Denied: Administrative privileges required to mark payment as paid.');
+    const targetOrder = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+    if (!targetOrder) throw new Error('Order not found.');
+
+    const now = new Date().toISOString();
+    const existingPaymentHistory = targetOrder.paymentHistory || [];
+    const existingAuditLogs = targetOrder.auditLogs || [];
+
+    const newPaymentHistoryItem: PaymentHistoryItem = {
+      status: 'Paid',
+      changedAt: now,
+      changedBy: user?.uid || 'admin',
+      reason,
+      source: 'MANUAL_ADMIN',
+    };
+
+    const newAuditItem: AuditLogItem = {
+      action: 'PAYMENT_MARKED_PAID',
+      adminId: user?.uid || 'admin',
+      adminEmail: user?.email || adminUser?.email,
+      timestamp: now,
+      previousValue: targetOrder.paymentStatus,
+      newValue: 'Paid',
+      reason,
+    };
+
+    const updates: Partial<Order> = {
+      paymentStatus: 'Paid',
+      paymentMarkedBy: user?.uid || 'admin',
+      paymentMarkedAt: now,
+      paymentManualConfirmation: true,
+      paymentConfirmationReason: reason,
+      paymentVerificationSource: 'MANUAL_ADMIN',
+      paymentHistory: [...existingPaymentHistory, newPaymentHistoryItem],
+      auditLogs: [...existingAuditLogs, newAuditItem],
+      updatedAt: now,
+    };
+
+    if (paymentMethod) {
+      updates.paymentMethod = paymentMethod as PaymentMethod;
+    }
+
+    try {
+      await updateDoc(doc(db, 'orders', targetOrder.id), removeUndefinedFields(updates));
+      setOrders((prev) =>
+        prev.map((o) => (o.id === targetOrder.id ? { ...o, ...updates } : o))
+      );
+      setLastCreatedOrder((prev) =>
+        prev && (prev.id === targetOrder.id || prev.orderNumber === targetOrder.orderNumber) ? { ...prev, ...updates } : prev
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `orders/${targetOrder.id}`);
+      throw err;
+    }
+  };
+
+  const requestOrderCancellation = async (orderId: string, reason: string, customReason?: string) => {
+    const targetOrder = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+    if (!targetOrder) throw new Error('Order not found.');
+
+    const allowedStatuses: OrderStatus[] = ['Order Placed', 'Order Confirmed', 'Packed', 'Pending', 'Confirmed', 'Processing'];
+    if (!allowedStatuses.includes(targetOrder.orderStatus)) {
+      throw new Error(`Order cannot be cancelled in status: ${targetOrder.orderStatus}`);
+    }
+
+    const now = new Date().toISOString();
+    const cancellationRequest: CancellationRequestInfo = {
+      reason,
+      customReason: customReason || '',
+      requestedAt: now,
+      requestedBy: user?.uid || 'customer',
+      status: 'pending',
+    };
+
+    const updates: Partial<Order> = {
+      orderStatus: 'Cancellation Requested',
+      cancellationRequest,
+      customerCancellationReason: reason,
+      cancellationDetails: customReason || '',
+      updatedAt: now,
+    };
+
+    try {
+      await updateDoc(doc(db, 'orders', targetOrder.id), removeUndefinedFields(updates));
+      setOrders((prev) =>
+        prev.map((o) => (o.id === targetOrder.id ? { ...o, ...updates } : o))
+      );
+      setLastCreatedOrder((prev) =>
+        prev && (prev.id === targetOrder.id || prev.orderNumber === targetOrder.orderNumber) ? { ...prev, ...updates } : prev
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `orders/${targetOrder.id}`);
+      throw err;
+    }
+  };
+
+  const adminApproveCancellation = async (orderId: string) => {
+    if (!isAdmin) throw new Error('Access Denied: Administrative privileges required.');
+    const targetOrder = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+    if (!targetOrder) throw new Error('Order not found.');
+
+    const now = new Date().toISOString();
+    const existingHistory = targetOrder.statusHistory || [];
+    const existingAudit = targetOrder.auditLogs || [];
+
+    const newHistoryItem: OrderStatusHistoryItem = {
+      status: 'Cancelled',
+      changedAt: now,
+      changedBy: user?.uid || 'admin',
+      changedByEmail: user?.email || adminUser?.email,
+    };
+
+    const newAudit: AuditLogItem = {
+      action: 'CANCELLATION_APPROVED',
+      adminId: user?.uid || 'admin',
+      adminEmail: user?.email || adminUser?.email,
+      timestamp: now,
+      previousValue: targetOrder.orderStatus,
+      newValue: 'Cancelled',
+      reason: targetOrder.cancellationRequest?.reason || targetOrder.customerCancellationReason,
+    };
+
+    const updates: Partial<Order> = {
+      orderStatus: 'Cancelled',
+      cancelledBy: 'Admin',
+      cancelledAt: now,
+      cancellationApprovedBy: user?.uid || 'admin',
+      cancellationApprovedAt: now,
+      statusHistory: [...existingHistory, newHistoryItem],
+      auditLogs: [...existingAudit, newAudit],
+      cancellationRequest: targetOrder.cancellationRequest ? { ...targetOrder.cancellationRequest, status: 'approved' } : undefined,
+      updatedAt: now,
+    };
+
+    try {
+      await updateDoc(doc(db, 'orders', targetOrder.id), removeUndefinedFields(updates));
+      setOrders((prev) =>
+        prev.map((o) => (o.id === targetOrder.id ? { ...o, ...updates } : o))
+      );
+      setLastCreatedOrder((prev) =>
+        prev && (prev.id === targetOrder.id || prev.orderNumber === targetOrder.orderNumber) ? { ...prev, ...updates } : prev
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `orders/${targetOrder.id}`);
+      throw err;
+    }
+  };
+
+  const adminRejectCancellation = async (orderId: string, reason: string) => {
+    if (!isAdmin) throw new Error('Access Denied: Administrative privileges required.');
+    const targetOrder = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+    if (!targetOrder) throw new Error('Order not found.');
+
+    const now = new Date().toISOString();
+    const existingAudit = targetOrder.auditLogs || [];
+
+    const newAudit: AuditLogItem = {
+      action: 'CANCELLATION_REJECTED',
+      adminId: user?.uid || 'admin',
+      adminEmail: user?.email || adminUser?.email,
+      timestamp: now,
+      previousValue: targetOrder.orderStatus,
+      newValue: targetOrder.orderStatus,
+      reason,
+    };
+
+    const updates: Partial<Order> = {
+      auditLogs: [...existingAudit, newAudit],
+      cancellationRequest: targetOrder.cancellationRequest ? { ...targetOrder.cancellationRequest, status: 'rejected', rejectedReason: reason } : undefined,
+      updatedAt: now,
+    };
+
+    try {
+      await updateDoc(doc(db, 'orders', targetOrder.id), removeUndefinedFields(updates));
+      setOrders((prev) =>
+        prev.map((o) => (o.id === targetOrder.id ? { ...o, ...updates } : o))
+      );
+      setLastCreatedOrder((prev) =>
+        prev && (prev.id === targetOrder.id || prev.orderNumber === targetOrder.orderNumber) ? { ...prev, ...updates } : prev
+      );
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `orders/${targetOrder.id}`);
+      throw err;
     }
   };
 
@@ -2886,9 +3084,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   ) => {
     if (!isAdmin) throw new Error('Access Denied: Administrative privileges required to modify order status.');
     try {
+      const targetOrder = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+      if (!targetOrder) throw new Error('Order not found.');
+
+      // Validate order status transition
+      const transitionResult = validateStatusTransition(targetOrder.orderStatus, status);
+      if (!transitionResult.isValid) {
+        throw new Error(transitionResult.error || 'Invalid order status transition.');
+      }
+
       const now = new Date().toISOString();
+      const existingHistory = targetOrder.statusHistory || [];
+      const existingAudit = targetOrder.auditLogs || [];
+
+      const newHistoryItem: OrderStatusHistoryItem = {
+        status,
+        changedAt: now,
+        changedBy: user?.uid || 'admin',
+        changedByEmail: user?.email || adminUser?.email,
+      };
+
+      const reasonStr = typeof details === 'object' && details !== null ? details.notes || details.cancellationReason : (typeof details === 'string' ? details : undefined);
+      const newAuditItem: AuditLogItem = {
+        action: 'ORDER_STATUS_CHANGED',
+        adminId: user?.uid || 'admin',
+        adminEmail: user?.email || adminUser?.email,
+        timestamp: now,
+        previousValue: targetOrder?.orderStatus,
+        newValue: status,
+        reason: reasonStr,
+      };
+
       const updates: Partial<Order> = {
         orderStatus: status,
+        statusHistory: [...existingHistory, newHistoryItem],
+        auditLogs: [...existingAudit, newAuditItem],
         updatedAt: now,
       };
 
@@ -3172,6 +3402,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         confirmRazorpayOrder,
         cancelOrder,
         requestReturn,
+        markOrderAsPaid,
+        requestOrderCancellation,
+        adminApproveCancellation,
+        adminRejectCancellation,
 
         user,
         customerProfile,

@@ -28,6 +28,7 @@ import { BrandLogo } from '../components/BrandLogo';
 import { CustomerAuthCard } from '../components/CustomerAuthCard';
 import { CancelOrderModal } from '../components/CancelOrderModal';
 import { OrderDetailsModal } from '../components/OrderDetailsModal';
+import { OrderStatusTimeline } from '../components/OrderStatusTimeline';
 import { validateIndianMobile, validateOptionalEmail } from '../utils/validation';
 
 export const AccountPage: React.FC = () => {
@@ -587,6 +588,11 @@ export const AccountPage: React.FC = () => {
                           ₹{order.total.toLocaleString('en-IN')}
                         </span>
                       </div>
+                    </div>
+
+                    {/* Professional Order Status Timeline */}
+                    <div className="p-5 bg-stone-50 border border-stone-200 rounded-3xl">
+                      <OrderStatusTimeline order={order} />
                     </div>
 
                     {/* Cancelled Order Notice Banner */}

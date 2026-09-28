@@ -100,6 +100,9 @@ export const AdminPage: React.FC = () => {
     updateContactStatus,
     deleteContact,
     updateOrderStatus,
+    adminApproveCancellation,
+    adminRejectCancellation,
+    markOrderAsPaid,
     saveSiteSettings,
     savePolicy,
     setCurrentView,
@@ -138,7 +141,7 @@ export const AdminPage: React.FC = () => {
   // Order Details Modal & Filters
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [orderFilterTab, setOrderFilterTab] = useState<
-    'all' | 'cod' | 'razorpay' | 'paid' | 'pending' | 'failed' | 'cancelled' | 'shipped' | 'delivered' | 'returns'
+    'all' | 'cod' | 'razorpay' | 'paid' | 'pending' | 'failed' | 'cancelled' | 'shipped' | 'delivered' | 'returns' | 'cancellations'
   >('all');
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [orderTrackingInput, setOrderTrackingInput] = useState({
@@ -152,6 +155,27 @@ export const AdminPage: React.FC = () => {
   const [orderUpdateError, setOrderUpdateError] = useState<string | null>(null);
   const [orderUpdateSuccess, setOrderUpdateSuccess] = useState<string | null>(null);
   const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
+  const [adminCancelReason, setAdminCancelReason] = useState('Customer requested cancellation');
+  const [adminCancelCustomText, setAdminCancelCustomText] = useState('');
+  
+  // Manual payment marking states
+  const [showMarkAsPaidForm, setShowMarkAsPaidForm] = useState(false);
+  const [manualPaymentMethod, setManualPaymentMethod] = useState('COD');
+  const [manualPaymentReference, setManualPaymentReference] = useState('');
+  const [manualPaymentReason, setManualPaymentReason] = useState('COD payment received');
+  const [manualPaymentError, setManualPaymentError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedOrderDetails) {
+      setAdminCancelReason('Customer requested cancellation');
+      setAdminCancelCustomText('');
+      setShowMarkAsPaidForm(false);
+      setManualPaymentMethod('COD');
+      setManualPaymentReference('');
+      setManualPaymentReason('COD payment received');
+      setManualPaymentError(null);
+    }
+  }, [selectedOrderDetails]);
 
   // Settings form local state
   const [settingsForm, setSettingsForm] = useState<SiteSettings>(settings);
@@ -1014,6 +1038,7 @@ export const AdminPage: React.FC = () => {
             const returnsCount = orders.filter((o) =>
               ['Return Requested', 'Returned', 'Refunded'].includes(o.orderStatus)
             ).length;
+            const cancellationsCount = orders.filter((o) => o.orderStatus === 'Cancellation Requested').length;
 
             const filteredOrders = orders.filter((ord) => {
               // Status & Payment filters
@@ -1043,6 +1068,8 @@ export const AdminPage: React.FC = () => {
                 if (ord.orderStatus !== 'Cancelled') return false;
               } else if (orderFilterTab === 'returns') {
                 if (!['Return Requested', 'Returned', 'Refunded'].includes(ord.orderStatus)) return false;
+              } else if (orderFilterTab === 'cancellations') {
+                if (ord.orderStatus !== 'Cancellation Requested') return false;
               }
 
               // Search query filter
@@ -1278,6 +1305,29 @@ export const AdminPage: React.FC = () => {
                       {returnsCount}
                     </span>
                   </button>
+
+                  {/* Cancellation Requests */}
+                  <button
+                    id="btn-admin-filter-cancellations"
+                    onClick={() => setOrderFilterTab('cancellations')}
+                    className={`text-xs px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                      orderFilterTab === 'cancellations'
+                        ? 'bg-red-950 text-white font-bold shadow-xs ring-2 ring-red-300'
+                        : 'bg-red-50 border border-red-200 text-red-900 hover:bg-red-100'
+                    }`}
+                  >
+                    <Ban className="w-3.5 h-3.5 text-red-700" />
+                    <span>Cancellation Requests</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                        orderFilterTab === 'cancellations'
+                          ? 'bg-white text-red-900'
+                          : 'bg-red-200 text-red-950'
+                      }`}
+                    >
+                      {cancellationsCount}
+                    </span>
+                  </button>
                 </div>
 
                 {/* SPECIALIZED CANCELLED ORDERS VIEW */}
@@ -1473,6 +1523,220 @@ export const AdminPage: React.FC = () => {
                         </div>
                       </div>
                     )}
+                  </div>
+                ) : orderFilterTab === 'returns' ? (
+                  /* SPECIALIZED RETURNS VIEW */
+                  <div className="space-y-4">
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-4 text-xs text-amber-950">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0">
+                          <RotateCcw className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <strong className="block font-serif text-sm">Return & Exchange Requests Log ({filteredOrders.length})</strong>
+                          <p className="text-stone-600 text-[11px] mt-0.5">
+                            Client-initiated return and exchange requests. Review reasons and schedule reverse pickups.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-amber-50/50 text-stone-700 uppercase border-b border-stone-200 text-[11px] tracking-wider">
+                            <tr>
+                              <th className="p-3">Order ID</th>
+                              <th className="p-3">Customer</th>
+                              <th className="p-3">Products</th>
+                              <th className="p-3">Type</th>
+                              <th className="p-3">Reason</th>
+                              <th className="p-3">Manual Notes</th>
+                              <th className="p-3">Requested On</th>
+                              <th className="p-3">Status</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100">
+                            {filteredOrders.length === 0 ? (
+                              <tr>
+                                <td colSpan={9} className="p-8 text-center text-stone-500">No return requests found.</td>
+                              </tr>
+                            ) : (
+                              filteredOrders.map((ord) => (
+                                <tr key={ord.id} className="hover:bg-amber-50/30">
+                                  <td className="p-3 font-mono font-bold text-stone-900">#{ord.orderNumber}</td>
+                                  <td className="p-3">
+                                    <span className="block font-semibold">{ord.customerName}</span>
+                                    <span className="text-[10px] text-stone-500">{ord.customerPhone}</span>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="max-w-xs truncate text-[11px]">
+                                      {ord.items.map(i => i.productName).join(', ')}
+                                    </div>
+                                  </td>
+                                  <td className="p-3 capitalize">{ord.returnType || 'Return'}</td>
+                                  <td className="p-3 font-medium text-amber-900">{ord.returnReason || '—'}</td>
+                                  <td className="p-3 text-stone-600 italic truncate max-w-[150px]" title={ord.returnNotes}>
+                                    {ord.returnNotes || '—'}
+                                  </td>
+                                  <td className="p-3 whitespace-nowrap text-stone-500">
+                                    {ord.returnRequestedAt ? new Date(ord.returnRequestedAt).toLocaleDateString('en-IN') : '—'}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                      {ord.orderStatus}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedOrderDetails(ord);
+                                        setOrderTrackingInput({
+                                          status: ord.orderStatus,
+                                          courierPartner: ord.courierPartner || ord.courier || '',
+                                          trackingUrl: ord.trackingUrl || '',
+                                          cancellationReason: '',
+                                          courier: ord.courier || ord.courierPartner || '',
+                                          trackingNumber: ord.trackingNumber || '',
+                                        });
+                                      }}
+                                      className="bg-stone-900 hover:bg-stone-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+                                    >
+                                      Manage
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                ) : orderFilterTab === 'cancellations' ? (
+                  /* SPECIALIZED CANCELLATION REQUESTS VIEW */
+                  <div className="space-y-4">
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between gap-4 text-xs text-red-950">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-red-200/80 text-red-800 flex items-center justify-center shrink-0">
+                          <Ban className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <strong className="block font-serif text-sm">Customer Cancellation Requests ({filteredOrders.length})</strong>
+                          <p className="text-stone-600 text-[11px] mt-0.5">
+                            Customer-initiated cancellation requests waiting for administrative approval. Approve to set status to Cancelled.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-stone-200 overflow-hidden shadow-xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-red-50/50 text-stone-700 uppercase border-b border-stone-200 text-[11px] tracking-wider">
+                            <tr>
+                              <th className="p-3">Order ID</th>
+                              <th className="p-3">Customer</th>
+                              <th className="p-3">Products</th>
+                              <th className="p-3">Reason</th>
+                              <th className="p-3">Custom Reason</th>
+                              <th className="p-3">Requested On</th>
+                              <th className="p-3">Current Status</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-stone-100">
+                            {filteredOrders.length === 0 ? (
+                              <tr>
+                                <td colSpan={8} className="p-8 text-center text-stone-500">No cancellation requests found.</td>
+                              </tr>
+                            ) : (
+                              filteredOrders.map((ord) => (
+                                <tr key={ord.id} className="hover:bg-stone-50/70">
+                                  <td className="p-3 font-mono font-bold text-stone-900">
+                                    #{ord.orderNumber}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="font-semibold block text-stone-900">{ord.customerName}</span>
+                                    <span className="text-[10px] text-stone-500 font-mono block">{ord.customerPhone}</span>
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="text-stone-700">{ord.items.map(i => i.productName).join(', ')}</span>
+                                  </td>
+                                  <td className="p-3 text-red-900 font-semibold">
+                                    {ord.cancellationRequest?.reason || ord.customerCancellationReason || 'Other'}
+                                  </td>
+                                  <td className="p-3 text-stone-600 italic">
+                                    {ord.cancellationRequest?.customReason || ord.cancellationDetails || '—'}
+                                  </td>
+                                  <td className="p-3 font-mono text-stone-600">
+                                    {ord.cancellationRequest?.requestedAt ? new Date(ord.cancellationRequest.requestedAt).toLocaleString('en-IN') : '—'}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                      {ord.orderStatus}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
+                                    <button
+                                      onClick={async () => {
+                                        if (window.confirm(`Are you sure you want to APPROVE the cancellation of Order #${ord.orderNumber}?`)) {
+                                          try {
+                                            await adminApproveCancellation(ord.id);
+                                            alert(`Order #${ord.orderNumber} cancellation approved successfully!`);
+                                          } catch (err: any) {
+                                            alert(err.message || 'Failed to approve cancellation.');
+                                          }
+                                        }
+                                      }}
+                                      className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase cursor-pointer"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        const reason = prompt('Please enter a rejection reason:');
+                                        if (reason === null) return;
+                                        if (!reason.trim()) {
+                                          alert('Rejection reason is required.');
+                                          return;
+                                        }
+                                        try {
+                                          await adminRejectCancellation(ord.id, reason.trim());
+                                          alert(`Order #${ord.orderNumber} cancellation request rejected.`);
+                                        } catch (err: any) {
+                                          alert(err.message || 'Failed to reject cancellation.');
+                                        }
+                                      }}
+                                      className="bg-rose-700 hover:bg-rose-800 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase cursor-pointer"
+                                    >
+                                      Reject
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedOrderDetails(ord);
+                                        setOrderTrackingInput({
+                                          status: ord.orderStatus,
+                                          courierPartner: ord.courierPartner || ord.courier || '',
+                                          trackingUrl: ord.trackingUrl || '',
+                                          cancellationReason: '',
+                                          courier: ord.courier || ord.courierPartner || '',
+                                          trackingNumber: ord.trackingNumber || '',
+                                        });
+                                      }}
+                                      className="bg-stone-900 hover:bg-stone-800 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase cursor-pointer"
+                                    >
+                                      Manage
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   /* STANDARD ALL / FILTERED ORDERS TABLE */
@@ -3646,6 +3910,165 @@ export const AdminPage: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Mark as Paid manual confirmation */}
+              {selectedOrderDetails.paymentStatus !== 'Paid' &&
+                selectedOrderDetails.paymentStatus !== 'Refunded' &&
+                selectedOrderDetails.paymentStatus !== 'Partially Refunded' && (
+                  <div className="pt-2.5 border-t border-stone-200">
+                    {!showMarkAsPaidForm ? (
+                      <button
+                        id="btn-admin-mark-as-paid-trigger"
+                        type="button"
+                        onClick={() => {
+                          setShowMarkAsPaidForm(true);
+                          setManualPaymentError(null);
+                        }}
+                        className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-semibold py-2 px-4 rounded-xl text-xs transition-colors cursor-pointer text-center uppercase tracking-wider block"
+                      >
+                        Mark as Paid
+                      </button>
+                    ) : (
+                      <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 space-y-3.5 animate-in fade-in duration-150 text-stone-900">
+                        <div className="flex items-center gap-1.5 font-bold text-indigo-950 text-xs">
+                          <CheckCircle2 className="w-4 h-4 text-indigo-800" />
+                          <span>Confirm Payment</span>
+                        </div>
+
+                        {/* Razorpay Warning */}
+                        {(selectedOrderDetails.razorpayOrderId ||
+                          selectedOrderDetails.paymentMethod === 'Razorpay / Online' ||
+                          selectedOrderDetails.paymentMethod === 'UPI / Online Payment') && (
+                          <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] leading-relaxed">
+                            <strong>Notice:</strong> Manual payment confirmation — not Razorpay verified. Original online transaction records will be preserved unchanged.
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-stone-600 text-[10px] font-bold uppercase tracking-wider mb-1">
+                              Payment Method *
+                            </label>
+                            <select
+                              id="admin-manual-payment-method-select"
+                              value={manualPaymentMethod}
+                              onChange={(e) => setManualPaymentMethod(e.target.value)}
+                              className="w-full bg-white p-2 border border-stone-300 rounded-xl font-medium focus:outline-none text-xs"
+                            >
+                              <option value="COD">COD</option>
+                              <option value="Manual">Manual</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-stone-600 text-[10px] font-bold uppercase tracking-wider mb-1">
+                              Reference ID (Optional)
+                            </label>
+                            <input
+                              id="admin-manual-payment-ref-input"
+                              type="text"
+                              value={manualPaymentReference}
+                              onChange={(e) => setManualPaymentReference(e.target.value)}
+                              placeholder="e.g. TXN98765432"
+                              className="w-full bg-white p-2 border border-stone-300 rounded-xl focus:outline-none font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-stone-600 text-[10px] font-bold uppercase tracking-wider mb-1">
+                            Reason / Remarks * (Required)
+                          </label>
+                          <select
+                            id="admin-manual-payment-reason-select"
+                            value={manualPaymentReason}
+                            onChange={(e) => {
+                              setManualPaymentReason(e.target.value);
+                              setManualPaymentError(null);
+                            }}
+                            className="w-full bg-white p-2 border border-stone-300 rounded-xl font-medium focus:outline-none text-xs mb-2"
+                          >
+                            <option value="COD payment received">COD payment received</option>
+                            <option value="Cash collected from customer">Cash collected from customer</option>
+                            <option value="Bank transfer received">Bank transfer received</option>
+                            <option value="Manual payment verified">Manual payment verified</option>
+                            <option value="Other">Other (Specify below)</option>
+                          </select>
+
+                          {manualPaymentReason === 'Other' && (
+                            <input
+                              id="admin-manual-payment-custom-reason-input"
+                              type="text"
+                              placeholder="Please specify custom reason..."
+                              value={manualPaymentReference} // Using reference field or custom text
+                              onChange={(e) => {
+                                setManualPaymentReference(e.target.value);
+                                setManualPaymentError(null);
+                              }}
+                              className="w-full bg-white p-2 border border-stone-300 rounded-xl text-xs focus:outline-none"
+                            />
+                          )}
+                        </div>
+
+                        {manualPaymentError && (
+                          <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 p-2 rounded-xl flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                            <span>{manualPaymentError}</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setShowMarkAsPaidForm(false)}
+                            className="text-stone-600 hover:text-stone-900 font-medium px-3.5 py-1.5 rounded-lg text-xs cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            id="btn-admin-manual-payment-confirm"
+                            type="button"
+                            onClick={async () => {
+                              setManualPaymentError(null);
+                              let finalReason = manualPaymentReason;
+                              if (manualPaymentReason === 'Other') {
+                                const customText = manualPaymentReference.trim();
+                                if (!customText) {
+                                  setManualPaymentError('Reason is required for other payment.');
+                                  return;
+                                }
+                                finalReason = customText;
+                              }
+
+                              try {
+                                await markOrderAsPaid(selectedOrderDetails.id, finalReason, manualPaymentMethod);
+                                setSelectedOrderDetails((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        paymentStatus: 'Paid',
+                                        paymentManualConfirmation: true,
+                                        paymentConfirmationReason: finalReason,
+                                        paymentVerificationSource: 'MANUAL_ADMIN',
+                                      }
+                                    : null
+                                );
+                                alert('Payment marked as Paid successfully!');
+                                setShowMarkAsPaidForm(false);
+                              } catch (err: any) {
+                                setManualPaymentError(err.message || 'Failed to update payment status.');
+                              }
+                            }}
+                            className="bg-indigo-950 hover:bg-indigo-900 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer shadow-xs whitespace-nowrap"
+                          >
+                            Confirm Payment
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
 
             {/* Delivery Destination */}
@@ -3743,14 +4166,26 @@ export const AdminPage: React.FC = () => {
                         }}
                         className="w-full bg-white p-2.5 rounded-xl border border-stone-300 text-stone-900 font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-700"
                       >
-                        <option value="Pending">Pending</option>
-                        <option value="Confirmed">Confirmed</option>
-                        <option value="Processing">Processing</option>
+                        {/* Standard Progress Statuses */}
+                        <option value="Order Placed">Order Placed</option>
+                        <option value="Order Confirmed">Order Confirmed</option>
+                        <option value="Packed">Packed</option>
                         <option value="Shipped">Shipped</option>
+                        <option value="Out for Delivery">Out for Delivery</option>
                         <option value="Delivered">Delivered</option>
+                        {/* Terminal / Exceptional Statuses */}
                         <option value="Cancelled">Cancelled</option>
+                        <option value="Cancellation Requested">Cancellation Requested</option>
                         <option value="Return Requested">Return Requested</option>
+                        <option value="Return Approved">Return Approved</option>
                         <option value="Returned">Returned</option>
+                        <option value="Refunded">Refunded</option>
+                        <option value="Exchange Requested">Exchange Requested</option>
+                        <option value="Pending Payment">Pending Payment</option>
+                        {/* Legacy Fallbacks */}
+                        <option value="Pending">Pending (Legacy)</option>
+                        <option value="Confirmed">Confirmed (Legacy)</option>
+                        <option value="Processing">Processing (Legacy)</option>
                       </select>
                     </div>
 
@@ -3870,22 +4305,37 @@ export const AdminPage: React.FC = () => {
                     <label className="block text-stone-700 font-bold uppercase tracking-wider text-[11px] mb-1">
                       CANCELLATION REASON <span className="text-rose-600">*</span>
                     </label>
-                    <textarea
-                      id="admin-order-cancellation-reason"
-                      rows={3}
-                      value={orderTrackingInput.cancellationReason}
+                    <select
+                      id="admin-order-cancellation-reason-select"
+                      value={adminCancelReason}
                       onChange={(e) => {
-                        setOrderTrackingInput({
-                          ...orderTrackingInput,
-                          cancellationReason: e.target.value,
-                        });
+                        setAdminCancelReason(e.target.value);
                         setOrderUpdateError(null);
                       }}
-                      placeholder="Enter cancellation reason (e.g. Product out of stock, Payment issue, Delivery service unavailable, Address could not be verified, etc.)"
-                      className="w-full bg-white p-2.5 rounded-xl border border-stone-300 text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-700 resize-none"
-                    />
+                      className="w-full bg-white p-2.5 rounded-xl border border-stone-300 text-stone-900 font-medium focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-700 mb-2.5"
+                    >
+                      <option value="Customer requested cancellation">Customer requested cancellation</option>
+                      <option value="Payment issue">Payment issue</option>
+                      <option value="Stock unavailable">Stock unavailable</option>
+                      <option value="Duplicate order">Duplicate order</option>
+                      <option value="Other">Other (Specify below)</option>
+                    </select>
+
+                    {adminCancelReason === 'Other' && (
+                      <textarea
+                        id="admin-order-cancellation-reason"
+                        rows={3}
+                        value={adminCancelCustomText}
+                        onChange={(e) => {
+                          setAdminCancelCustomText(e.target.value);
+                          setOrderUpdateError(null);
+                        }}
+                        placeholder="Enter custom cancellation reason (e.g. Courier service unavailable, Delivery area out of bound, etc.)"
+                        className="w-full bg-white p-2.5 rounded-xl border border-stone-300 text-stone-900 text-xs focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-700 resize-none animate-in fade-in duration-150"
+                      />
+                    )}
                     <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">
-                      Please enter a cancellation reason (5 to 500 characters). This will be shown to the customer.
+                      Select or specify a cancellation reason. This will be recorded securely and displayed to the customer.
                     </p>
                   </div>
 
@@ -3898,24 +4348,24 @@ export const AdminPage: React.FC = () => {
                         setOrderUpdateError(null);
                         setOrderUpdateSuccess(null);
 
-                        const cleanReason = orderTrackingInput.cancellationReason.trim();
-                        if (!cleanReason) {
-                          setOrderUpdateError('Please enter a cancellation reason.');
-                          return;
-                        }
-                        if (cleanReason.length < 5) {
-                          setOrderUpdateError('Cancellation reason must be at least 5 characters long.');
-                          return;
-                        }
-                        if (cleanReason.length > 500) {
-                          setOrderUpdateError('Cancellation reason cannot exceed 500 characters.');
-                          return;
+                        let finalReason = adminCancelReason;
+                        if (adminCancelReason === 'Other') {
+                          const customText = adminCancelCustomText.trim();
+                          if (!customText) {
+                            setOrderUpdateError('Please specify the custom cancellation reason.');
+                            return;
+                          }
+                          if (customText.length < 5) {
+                            setOrderUpdateError('Custom reason must be at least 5 characters long.');
+                            return;
+                          }
+                          finalReason = customText;
                         }
 
                         setIsUpdatingOrder(true);
                         try {
                           await updateOrderStatus(selectedOrderDetails.id, 'Cancelled', {
-                            cancellationReason: cleanReason,
+                            cancellationReason: finalReason,
                             cancelledBy: 'admin',
                           });
                           setOrderUpdateSuccess('Order cancelled successfully.');

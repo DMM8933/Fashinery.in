@@ -3,7 +3,31 @@ import { getAuth } from 'firebase/auth';
 import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { doc, getDocFromServer, initializeFirestore, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import firebaseConfig from '../../firebase-applet-config.json';
+
+const fallbackFirebaseConfig = {
+  projectId: "handy-silicon-d9v0l",
+  appId: "1:439580958557:web:d3cc0e1e3e98de7f5352b4",
+  apiKey: "AIzaSyBE5-TM1zotm32H5lgyLzE8DVnfJ8FdrMk",
+  authDomain: "handy-silicon-d9v0l.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-492d4aaa-1e52-4626-b6bc-c4fd0cb874e6",
+  storageBucket: "handy-silicon-d9v0l.firebasestorage.app",
+  messagingSenderId: "439580958557",
+  measurementId: "",
+  oAuthClientId: "439580958557-846l4k9aocl082ui33nmrme3mqr23tet.apps.googleusercontent.com",
+  recaptchaSiteKey: ""
+};
+
+let firebaseConfig = fallbackFirebaseConfig;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const loaded = require('../../firebase-applet-config.json');
+  if (loaded && loaded.projectId) {
+    firebaseConfig = loaded;
+  }
+} catch {
+  // Use fallback config if file is missing
+}
+
 
 // Silence verbose internal connection warnings from Firestore SDK
 setLogLevel('silent');

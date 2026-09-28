@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Order, isOrderCancellable, isValidTrackingUrl } from '../types';
 import { useStore } from '../context/StoreContext';
+import { OrderStatusTimeline } from './OrderStatusTimeline';
 
 interface OrderDetailsModalProps {
   order: Order | null;
@@ -48,6 +49,10 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
 
   const cancellable = isOrderCancellable(order);
   const isCancelled = order.orderStatus === 'Cancelled';
+  const isReturnRequested =
+    order.orderStatus === 'Return Requested' ||
+    order.orderStatus === 'Exchange Requested' ||
+    order.orderStatus === 'Returned';
 
   return (
     <div
@@ -91,70 +96,10 @@ export const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({
           </button>
         </div>
 
-        {/* Status Banner */}
-        {isCancelled ? (
-          <div className="p-4 sm:p-5 bg-rose-50 border border-rose-200 rounded-2xl space-y-2">
-            <div className="flex items-center gap-2">
-              <Ban className="w-5 h-5 text-rose-700 shrink-0" />
-              <span className="font-bold text-rose-900 text-sm tracking-wide">ORDER CANCELLED</span>
-            </div>
-
-            <div className="text-xs text-rose-900/90 pt-1 space-y-1">
-              <p>
-                <strong>Cancellation Reason:</strong>{' '}
-                <span className="font-semibold text-rose-950">
-                  {order.cancelledBy?.toLowerCase() === 'admin'
-                    ? order.cancellationReason || 'Order could not be fulfilled'
-                    : order.customerCancellationReason || order.cancellationReason || 'Customer requested cancellation'}
-                </span>
-              </p>
-              {order.cancelledBy?.toLowerCase() !== 'admin' && order.cancellationDetails && (
-                <p className="italic text-stone-700">
-                  <strong>Details:</strong> "{order.cancellationDetails}"
-                </p>
-              )}
-              {order.cancelledAt && (
-                <p className="text-stone-500 text-[11px]">
-                  <strong>Cancelled Date &amp; Time:</strong>{' '}
-                  {new Date(order.cancelledAt).toLocaleString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3">
-              <span
-                className={`inline-block font-bold text-xs px-3 py-1 rounded-full border ${
-                  order.orderStatus === 'Delivered'
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                    : order.orderStatus === 'Shipped'
-                    ? 'bg-blue-50 text-blue-800 border-blue-200'
-                    : order.orderStatus === 'Return Requested'
-                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                    : 'bg-stone-200/80 text-stone-900 border-stone-300'
-                }`}
-              >
-                {order.orderStatus}
-              </span>
-              <span className="text-stone-500">
-                Payment: <strong className="text-stone-800">{order.paymentMethod}</strong> ({order.paymentStatus})
-              </span>
-            </div>
-
-            {cancellable && (
-              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                Eligible for Cancellation
-              </span>
-            )}
-          </div>
-        )}
+        {/* Professional Order Status Timeline */}
+        <div className="p-5 bg-stone-50 border border-stone-200 rounded-3xl">
+          <OrderStatusTimeline order={order} />
+        </div>
 
         {/* Courier Partner & Track My Order Button */}
         {(isValidTrackingUrl(order.trackingUrl) || Boolean(order.courierPartner || order.courier)) && (

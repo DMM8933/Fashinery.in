@@ -11,7 +11,30 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import firebaseConfig from './firebase-applet-config.json';
+
+let firebaseConfig = {
+  projectId: "handy-silicon-d9v0l",
+  appId: "1:439580958557:web:d3cc0e1e3e98de7f5352b4",
+  apiKey: "AIzaSyBE5-TM1zotm32H5lgyLzE8DVnfJ8FdrMk",
+  authDomain: "handy-silicon-d9v0l.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-492d4aaa-1e52-4626-b6bc-c4fd0cb874e6",
+  storageBucket: "handy-silicon-d9v0l.firebasestorage.app",
+  messagingSenderId: "439580958557",
+  measurementId: "",
+  oAuthClientId: "439580958557-846l4k9aocl082ui33nmrme3mqr23tet.apps.googleusercontent.com",
+  recaptchaSiteKey: ""
+};
+
+try {
+  const rawConfig = fs.readFileSync(path.resolve(__dirname, 'firebase-applet-config.json'), 'utf-8');
+  const parsed = JSON.parse(rawConfig);
+  if (parsed && parsed.projectId) {
+    firebaseConfig = parsed;
+  }
+} catch {
+  // Use fallback if file is missing
+}
+
 
 dotenv.config();
 
@@ -317,8 +340,8 @@ async function calculateVerifiedOrder(body: {
 
 async function startServer() {
   const app = express();
-  // Force Port 3000 as per AI Studio environment constraints
-  const PORT = 3000;
+  // Respect platform-provided PORT in production, default to 3000 for AI Studio dev environment constraints
+  const PORT = Number(process.env.PORT || 3000);
 
   // Production Security Headers (Helmet)
   app.use(

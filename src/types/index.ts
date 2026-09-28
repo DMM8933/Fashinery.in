@@ -160,18 +160,23 @@ export interface ShippingAddress {
 }
 
 export type OrderStatus =
-  | 'Pending Payment'
-  | 'Pending'
-  | 'Confirmed'
-  | 'Processing'
+  | 'Order Placed'
+  | 'Order Confirmed'
   | 'Packed'
   | 'Shipped'
   | 'Out for Delivery'
   | 'Delivered'
   | 'Cancelled'
   | 'Return Requested'
+  | 'Return Approved'
   | 'Returned'
-  | 'Refunded';
+  | 'Refunded'
+  | 'Cancellation Requested'
+  | 'Exchange Requested'
+  | 'Pending Payment'
+  | 'Pending'
+  | 'Confirmed'
+  | 'Processing';
 
 export type PaymentMethod =
   | 'Cash on Delivery'
@@ -180,7 +185,41 @@ export type PaymentMethod =
   | 'Razorpay / Online'
   | 'Online Payment (Razorpay)';
 
-export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded';
+export type PaymentStatus = 'Pending' | 'Paid' | 'Failed' | 'Refunded' | 'Partially Refunded';
+
+export interface OrderStatusHistoryItem {
+  status: OrderStatus;
+  changedAt: string;
+  changedBy: string;
+  changedByEmail?: string;
+}
+
+export interface PaymentHistoryItem {
+  status: PaymentStatus;
+  changedAt: string;
+  changedBy: string;
+  reason?: string;
+  source?: string;
+}
+
+export interface CancellationRequestInfo {
+  reason: string;
+  customReason?: string;
+  requestedAt: string;
+  requestedBy: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejectedReason?: string;
+}
+
+export interface AuditLogItem {
+  action: string;
+  adminId: string;
+  adminEmail?: string;
+  timestamp: string;
+  previousValue?: string;
+  newValue?: string;
+  reason?: string;
+}
 
 export interface Order {
   id: string;
@@ -203,6 +242,15 @@ export interface Order {
   razorpayPaymentId?: string;
   razorpaySignature?: string;
   paidAt?: string;
+  paymentMarkedBy?: string;
+  paymentMarkedAt?: string;
+  paymentManualConfirmation?: boolean;
+  paymentConfirmationReason?: string;
+  paymentVerificationSource?: string;
+  paymentHistory?: PaymentHistoryItem[];
+  statusHistory?: OrderStatusHistoryItem[];
+  auditLogs?: AuditLogItem[];
+  cancellationRequest?: CancellationRequestInfo;
   trackingUrl?: string;
   courierPartner?: string;
   trackingNumber?: string;
@@ -212,11 +260,14 @@ export interface Order {
   returnNotes?: string;
   returnRequestedAt?: string;
   returnType?: 'return' | 'exchange';
+  returnStatus?: 'pending' | 'approved' | 'rejected' | 'completed';
   cancelledAt?: string;
   cancellationReason?: string;
   customerCancellationReason?: string;
   cancellationDetails?: string;
   cancelledBy?: 'Customer' | 'Admin' | 'customer' | 'admin';
+  cancellationApprovedBy?: string;
+  cancellationApprovedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -266,6 +317,76 @@ export function isOrderCancellable(order?: Order | null): boolean {
     'Refunded',
   ];
   return !nonCancellableStatuses.includes(order.orderStatus);
+}
+
+export function validateStatusTransition(currentStatus: OrderStatus, newStatus: OrderStatus): { isValid: boolean; error?: string } {
+  if (currentStatus === newStatus) return { isValid: true };
+
+  // Once an order is Cancelled, Returned, or Refunded, it is terminal and cannot be changed.
+  if (currentStatus === 'Cancelled') {
+    return { isValid: false, error: 'Cannot update status: This order has already been Cancelled.' };
+  }
+  if (currentStatus === 'Returned') {
+    return { isValid: false, error: 'Cannot update status: This order has already been Returned.' };
+  }
+  if (currentStatus === 'Refunded') {
+    return { isValid: false, error: 'Cannot update status: This order has already been Refunded.' };
+  }
+
+  // Progress indexes for active path
+  const progressOrder: OrderStatus[] = [
+    'Order Placed',
+    'Pending',
+    'Order Confirmed',
+    'Confirmed',
+    'Processing',
+    'Packed',
+    'Shipped',
+    'Out for Delivery',
+    'Delivered',
+  ];
+
+  const getNormalizedIndex = (status: OrderStatus): number => {
+    if (status === 'Order Placed' || status === 'Pending') return 0;
+    if (status === 'Order Confirmed' || status === 'Confirmed' || status === 'Processing') return 1;
+    if (status === 'Packed') return 2;
+    if (status === 'Shipped') return 3;
+    if (status === 'Out for Delivery') return 4;
+    if (status === 'Delivered') return 5;
+    return -1;
+  };
+
+  const currentIndex = getNormalizedIndex(currentStatus);
+  const newIndex = getNormalizedIndex(newStatus);
+
+  // Prevent backward transitions in the delivery progress chain
+  if (currentIndex !== -1 && newIndex !== -1) {
+    if (newIndex < currentIndex) {
+      return {
+        isValid: false,
+        error: `Cannot change status backward from "${currentStatus}" to "${newStatus}".`,
+      };
+    }
+  }
+
+  // Delivered orders can only transition to return-related statuses or refund-related statuses
+  if (currentStatus === 'Delivered') {
+    const allowedAfterDelivery: OrderStatus[] = [
+      'Return Requested',
+      'Return Approved',
+      'Returned',
+      'Refunded',
+      'Exchange Requested',
+    ];
+    if (!allowedAfterDelivery.includes(newStatus)) {
+      return {
+        isValid: false,
+        error: `A Delivered order can only transition to return or refund actions, not back to "${newStatus}".`,
+      };
+    }
+  }
+
+  return { isValid: true };
 }
 
 export interface Review {

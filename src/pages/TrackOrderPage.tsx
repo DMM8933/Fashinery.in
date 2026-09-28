@@ -20,6 +20,7 @@ import {
 import { useStore } from '../context/StoreContext';
 import { Order, OrderStatus, isOrderCancellable, isValidTrackingUrl } from '../types';
 import { CancelOrderModal } from '../components/CancelOrderModal';
+import { OrderStatusTimeline } from '../components/OrderStatusTimeline';
 
 export const TrackOrderPage: React.FC = () => {
   const {
@@ -295,42 +296,10 @@ export const TrackOrderPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Real-time Timeline Bar */}
-              {selectedOrder.orderStatus !== 'Cancelled' && (
-                <div className="py-4">
-                  <div className="grid grid-cols-5 gap-2 relative">
-                    {/* Background track line */}
-                    <div className="absolute top-4 left-6 right-6 h-0.5 bg-stone-200 -z-0" />
-
-                    {statusSteps.map((step, idx) => {
-                      const currentStepIdx = getStepIndex(selectedOrder.orderStatus);
-                      const isCompleted = idx <= currentStepIdx;
-                      const isCurrent = idx === currentStepIdx;
-
-                      return (
-                        <div key={step} className="flex flex-col items-center text-center relative z-10">
-                          <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                              isCompleted
-                                ? 'bg-stone-950 text-white shadow-xs'
-                                : 'bg-white border-2 border-stone-300 text-stone-400'
-                            } ${isCurrent ? 'ring-4 ring-amber-100 scale-110' : ''}`}
-                          >
-                            {isCompleted ? <Check className="w-4 h-4" /> : idx + 1}
-                          </div>
-                          <span
-                            className={`mt-2 text-[11px] font-semibold leading-tight ${
-                              isCompleted ? 'text-stone-900' : 'text-stone-400'
-                            }`}
-                          >
-                            {step}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {/* Professional Real-time Order Status Timeline */}
+              <div className="p-5 bg-stone-50 border border-stone-200 rounded-3xl my-3">
+                <OrderStatusTimeline order={selectedOrder} />
+              </div>
 
               {/* Shipment Logistics Specs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-stone-100 text-xs">
