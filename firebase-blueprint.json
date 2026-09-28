@@ -1,5 +1,32 @@
 {
   "entities": {
+    "Newsletter": {
+      "title": "Newsletter",
+      "description": "Newsletter subscription record",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "subscribedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "subscribedAt"]
+    },
+    "Contact": {
+      "title": "Contact",
+      "description": "Customer inquiry message",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2 },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "orderId": { "type": "string" },
+        "subject": { "type": "string", "minLength": 2 },
+        "message": { "type": "string", "minLength": 5 },
+        "status": { "type": "string", "enum": ["new", "read", "replied", "archived"] },
+        "adminNotes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email", "subject", "message", "status", "createdAt"]
+    },
     "Admin": {
       "title": "Admin",
       "description": "Authorized administrator record with role-based permissions and active status",
@@ -30,7 +57,7 @@
           "type": "string",
           "description": "Email or UID of the Super Admin who authorized this account"
         },
-        "createdAt": {
+        "addedAt": {
           "type": "string",
           "description": "Creation timestamp"
         },
@@ -39,7 +66,7 @@
           "description": "Last updated timestamp"
         }
       },
-      "required": ["email", "role", "isActive"]
+      "required": ["uid", "email", "role", "isActive", "addedAt"]
     },
     "User": {
       "title": "User",
@@ -59,7 +86,7 @@
         "updatedAt": { "type": "string" },
         "isBlocked": { "type": "boolean" }
       },
-      "required": ["uid", "phone", "role"]
+      "required": ["uid", "role"]
     },
     "PhoneLookup": {
       "title": "PhoneLookup",

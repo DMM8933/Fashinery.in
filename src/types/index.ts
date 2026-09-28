@@ -90,6 +90,7 @@ export interface Category {
   slug: string;
   description: string;
   image: string;
+  imageStoragePath?: string;
   sortOrder: number;
   isActive: boolean;
   seoTitle?: string;
@@ -102,7 +103,9 @@ export interface Banner {
   subtitle?: string;
   description?: string;
   desktopImage: string;
+  desktopImageStoragePath?: string;
   mobileImage?: string;
+  mobileImageStoragePath?: string;
   buttonText?: string;
   buttonUrl?: string;
   position: 'hero' | 'promo' | 'offer' | 'popup';
@@ -206,6 +209,9 @@ export interface Order {
   courier?: string;
   notes?: string;
   returnReason?: string;
+  returnNotes?: string;
+  returnRequestedAt?: string;
+  returnType?: 'return' | 'exchange';
   cancelledAt?: string;
   cancellationReason?: string;
   customerCancellationReason?: string;
@@ -236,6 +242,17 @@ export const CANCELLATION_REASONS = [
 ] as const;
 
 export type CancellationReason = typeof CANCELLATION_REASONS[number];
+
+export const RETURN_REASONS = [
+  'Size does not fit',
+  'Damaged/Defective product',
+  'Different from image',
+  'Incorrect item received',
+  'Quality not as expected',
+  'Other',
+] as const;
+
+export type ReturnReason = typeof RETURN_REASONS[number];
 
 export function isOrderCancellable(order?: Order | null): boolean {
   if (!order) return false;
@@ -282,6 +299,7 @@ export interface SiteSettings {
   returnPeriodDays: number;
   announcementText: string;
   announcementActive: boolean;
+  announcementLink?: string;
   supportHours?: string;
   footerDescription?: string;
   // Configurable Policy Timelines
@@ -294,6 +312,7 @@ export interface SiteSettings {
   socialInstagram?: string;
   socialFacebook?: string;
   socialPinterest?: string;
+  socialWhatsApp?: string;
   seoTitle?: string;
   seoDescription?: string;
   seoKeywords?: string;

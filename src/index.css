@@ -118,6 +118,21 @@
   animation: splash-shimmer-sweep 1.2s cubic-bezier(0.4, 0, 0.2, 1) 0.35s forwards;
 }
 
+@keyframes bounce-slow {
+  0%, 100% {
+    transform: translateY(-5%);
+    animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
+  }
+  50% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 3s infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-splash-logo,
   .animate-splash-glow,

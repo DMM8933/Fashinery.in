@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { doc, getDocFromServer, initializeFirestore, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -40,6 +41,22 @@ export const db = initializeFirestore(
 
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+// Optional: Initialize App Check (requires site key registration in Firebase Console)
+if (typeof window !== 'undefined' && (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN !== undefined) {
+  (window as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+}
+
+if (typeof window !== 'undefined' && firebaseConfig.recaptchaSiteKey) {
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(firebaseConfig.recaptchaSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch (err) {
+    console.warn('App Check initialization note:', err);
+  }
+}
 
 export enum OperationType {
   CREATE = 'create',

@@ -74,6 +74,7 @@ import {
   validatePassword,
   checkPasswordPolicy,
   maskEmail,
+  validateSafeURL,
 } from '../utils/validation';
 
 export type ActiveView =
@@ -2580,7 +2581,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         collection(db, 'reviews'),
         removeUndefinedFields({
           ...review,
-          status: 'approved', // Auto-approved for seamless demo feedback
+          status: 'pending', // Moderation required in production
           isFeatured: false,
           createdAt: new Date().toISOString(),
         })
@@ -2626,6 +2627,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Admin Operations
   const saveProduct = async (productData: Partial<Product>) => {
+    if (!isAdmin) throw new Error('Access Denied: Administrative privileges required.');
+
+    // URL Validation for product images
+    if (productData.images && Array.isArray(productData.images)) {
+      for (const url of productData.images) {
+        const v = validateSafeURL(url);
+        if (!v.isValid) throw new Error(`Security Alert: Unsafe product image URL detected (${v.error}).`);
+      }
+    }
+
     const id = productData.id || `prod-${Date.now()}`;
     const cleanSlug =
       productData.slug ||
@@ -2725,6 +2736,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteProduct = async (productId: string) => {
+    if (!isAdmin) throw new Error('Access Denied');
     try {
       await deleteDoc(doc(db, 'products', productId));
     } catch (err) {
@@ -2733,6 +2745,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const saveCategory = async (categoryData: Partial<Category>) => {
+    if (!isAdmin) throw new Error('Access Denied');
+    
+    // URL Validation
+    const v = validateSafeURL(categoryData.image);
+    if (!v.isValid) throw new Error(`Security Alert: Unsafe category image URL detected (${v.error}).`);
+
     const id = categoryData.id || `cat-${Date.now()}`;
     const cleanSlug =
       categoryData.slug ||
@@ -2769,6 +2787,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const saveBanner = async (bannerData: Partial<Banner>) => {
+    if (!isAdmin) throw new Error('Access Denied');
+
+    // URL Validation
+    const urlCheck1 = validateSafeURL(bannerData.buttonUrl);
+    if (!urlCheck1.isValid) throw new Error(`Security Alert: Unsafe button URL detected.`);
+    const urlCheck2 = validateSafeURL(bannerData.desktopImage);
+    if (!urlCheck2.isValid) throw new Error(`Security Alert: Unsafe desktop image URL detected.`);
+    const urlCheck3 = validateSafeURL(bannerData.mobileImage);
+    if (!urlCheck3.isValid) throw new Error(`Security Alert: Unsafe mobile image URL detected.`);
+
     const id = bannerData.id || `banner-${Date.now()}`;
     const ban: Banner = {
       id,
@@ -2801,6 +2829,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const saveCoupon = async (couponData: Partial<Coupon>) => {
+    if (!isAdmin) throw new Error('Access Denied');
     const id = couponData.id || `coupon-${Date.now()}`;
     const cleanCode = (couponData.code || '').toUpperCase().trim();
     if (!cleanCode) return;
@@ -2831,6 +2860,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteCoupon = async (couponId: string) => {
+    if (!isAdmin) throw new Error('Access Denied');
     try {
       await deleteDoc(doc(db, 'coupons', couponId));
     } catch (err) {
@@ -2854,6 +2884,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     legacyNotes?: string,
     legacyCancellationReason?: string
   ) => {
+    if (!isAdmin) throw new Error('Access Denied: Administrative privileges required to modify order status.');
     try {
       const now = new Date().toISOString();
       const updates: Partial<Order> = {
@@ -2926,6 +2957,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const saveSiteSettings = async (newSettings: SiteSettings) => {
+    if (!isAdmin) throw new Error('Unauthorized');
+
+    // URL Validation
+    const urlsToValidate = [
+      newSettings.logoUrl,
+      newSettings.faviconUrl,
+      newSettings.announcementLink,
+      newSettings.socialInstagram,
+      newSettings.socialFacebook,
+      newSettings.socialWhatsApp,
+    ];
+
+    for (const url of urlsToValidate) {
+      const v = validateSafeURL(url);
+      if (!v.isValid) throw new Error(`Site settings contains unsafe URL: ${v.error}`);
+    }
+
     try {
       const cleanSettings: SiteSettings = {
         ...newSettings,
@@ -3002,6 +3050,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const saveFaq = async (faq: Partial<FAQItem>) => {
+    if (!isAdmin) throw new Error('Access Denied');
     const id = faq.id || `faq_${Date.now()}`;
     const data: FAQItem = {
       id,
@@ -3019,6 +3068,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteFaq = async (faqId: string) => {
+    if (!isAdmin) throw new Error('Access Denied');
     try {
       await deleteDoc(doc(db, 'faqs', faqId));
     } catch (err) {
@@ -3049,6 +3099,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const moderateReview = async (reviewId: string, status: 'approved' | 'rejected') => {
+    if (!isAdmin) throw new Error('Access Denied');
     try {
       await updateDoc(doc(db, 'reviews', reviewId), removeUndefinedFields({ status }));
     } catch (err) {
@@ -3057,6 +3108,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteReview = async (reviewId: string) => {
+    if (!isAdmin) throw new Error('Access Denied');
     try {
       await deleteDoc(doc(db, 'reviews', reviewId));
     } catch (err) {

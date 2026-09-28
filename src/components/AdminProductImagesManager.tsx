@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ProductImageItem } from '../types';
 import { uploadProductImage, deleteProductImageFile } from '../lib/imageStorage';
+import { auth } from '../lib/firebase';
 
 interface AdminProductImagesManagerProps {
   productId?: string;
@@ -102,6 +103,7 @@ export const AdminProductImagesManager: React.FC<AdminProductImagesManagerProps>
 
     try {
       const newItems: ProductImageItem[] = [...currentItems];
+      const idToken = await auth.currentUser?.getIdToken();
 
       for (let i = 0; i < validFiles.length; i++) {
         const file = validFiles[i];
@@ -113,7 +115,8 @@ export const AdminProductImagesManager: React.FC<AdminProductImagesManagerProps>
           productId,
           folder,
           colorId,
-          (pct) => setUploadProgress(pct)
+          (pct) => setUploadProgress(pct),
+          idToken
         );
 
         const isFirst = newItems.length === 0;
@@ -162,18 +165,20 @@ export const AdminProductImagesManager: React.FC<AdminProductImagesManagerProps>
     setCurrentUploadName(`Replacing with ${file.name}`);
 
     try {
+      const idToken = await auth.currentUser?.getIdToken();
       const uploaded = await uploadProductImage(
         file,
         productId,
         folder,
         colorId,
-        (pct) => setUploadProgress(pct)
+        (pct) => setUploadProgress(pct),
+        idToken
       );
 
       const oldItem = currentItems[replacingIndex];
       // Clean up old storage if possible
       if (oldItem?.storagePath) {
-        deleteProductImageFile(oldItem.storagePath).catch(() => {});
+        deleteProductImageFile(oldItem.storagePath, idToken).catch(() => {});
       }
 
       const updated = [...currentItems];
@@ -231,10 +236,15 @@ export const AdminProductImagesManager: React.FC<AdminProductImagesManagerProps>
   };
 
   // Delete image
-  const handleDelete = (index: number) => {
+  const handleDelete = async (index: number) => {
     const itemToDelete = currentItems[index];
     if (itemToDelete?.storagePath) {
-      deleteProductImageFile(itemToDelete.storagePath).catch(() => {});
+      try {
+        const idToken = await auth.currentUser?.getIdToken();
+        deleteProductImageFile(itemToDelete.storagePath, idToken).catch(() => {});
+      } catch (err) {
+        console.warn('Auth token retrieval for delete:', err);
+      }
     }
 
     const updated = currentItems.filter((_, i) => i !== index).map((item, idx) => ({

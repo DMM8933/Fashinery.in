@@ -254,6 +254,34 @@ export function validatePassword(
 }
 
 /**
+ * Validates a URL for safety in production environments.
+ * Rejects javascript:, data:, vbscript: to prevent XSS.
+ * Only allows http: and https: protocols for external links.
+ */
+export function validateSafeURL(url?: string): { isValid: boolean; error?: string } {
+  if (!url || !url.trim()) return { isValid: true };
+  const clean = url.trim().toLowerCase();
+
+  if (clean.startsWith('javascript:') || clean.startsWith('data:') || clean.startsWith('vbscript:')) {
+    return {
+      isValid: false,
+      error: 'Unsafe URL protocol detected. Only http:// and https:// are allowed.',
+    };
+  }
+
+  // Check if it's a valid URL format if it looks like an absolute link
+  if (clean.startsWith('http://') || clean.startsWith('https://')) {
+    try {
+      new URL(url);
+    } catch {
+      return { isValid: false, error: 'Invalid URL format.' };
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
  * Masks an email for privacy display during password reset (e.g. a***a@gmail.com)
  */
 export function maskEmail(email: string): string {

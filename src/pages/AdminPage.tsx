@@ -22,6 +22,7 @@ import {
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   Settings,
@@ -42,6 +43,7 @@ import { AdminUsersTab } from '../components/AdminUsersTab';
 import { AdminProductOptionsEditor } from '../components/AdminProductOptionsEditor';
 import { AdminProductImagesManager } from '../components/AdminProductImagesManager';
 import { AdminCommunityGalleryTab } from '../components/AdminCommunityGalleryTab';
+import { AdminImageUploadField } from '../components/AdminImageUploadField';
 import {
   Banner,
   Category,
@@ -289,37 +291,6 @@ export const AdminPage: React.FC = () => {
     await saveCoupon(editingCoupon);
     setCouponModalOpen(false);
     setEditingCoupon(null);
-  };
-
-  // Logo file upload handler
-  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (JPG, PNG, WebP, SVG).');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      const dataUrl = event.target?.result as string;
-      if (dataUrl) {
-        const updated = {
-          ...settingsForm,
-          logoUrl: dataUrl,
-        };
-        setSettingsForm(updated);
-        try {
-          await saveSiteSettings(updated);
-          setSettingsSaved(true);
-          setTimeout(() => setSettingsSaved(false), 3000);
-        } catch (err) {
-          console.error('Failed to auto-save logo:', err);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   // Settings save
@@ -2475,55 +2446,25 @@ export const AdminPage: React.FC = () => {
               >
                 {/* Brand Logo Upload & Management */}
                 <div className="p-5 bg-amber-50/40 border border-amber-200/80 rounded-2xl space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4 text-amber-800" />
-                        <span>Official Brand Logo</span>
-                      </h4>
-                      <p className="text-xs text-stone-500 mt-0.5">
-                        Upload your exact logo file (e.g. IMG-20260914-WA0010.jpg, PNG, SVG). Automatically updates all navigation bars, footers, and admin panels site-wide.
-                      </p>
-                    </div>
-                    {settingsForm.logoUrl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const updated = { ...settingsForm, logoUrl: '' };
-                          setSettingsForm(updated);
-                          saveSiteSettings(updated);
-                        }}
-                        className="text-xs text-rose-700 hover:text-rose-800 underline font-medium self-start sm:self-auto cursor-pointer"
-                      >
-                        Reset to Default Logo
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-white rounded-xl border border-stone-200">
-                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 flex items-center justify-center min-w-[180px] h-20">
-                      <img
-                        src={settingsForm.logoUrl && settingsForm.logoUrl.trim() !== '' ? settingsForm.logoUrl.trim() : '/assets/fashinery-custom-logo.jpg'}
-                        alt="Active Brand Logo Preview"
-                        className="max-h-14 max-w-[170px] object-contain"
-                      />
-                    </div>
-
-                    <div className="flex-1 space-y-2 w-full">
-                      <label className="block text-xs font-semibold text-stone-700">
-                        Select Exact Logo File from Device
-                      </label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleLogoFileUpload}
-                        className="block w-full text-xs text-stone-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-900 file:text-white hover:file:bg-amber-800 cursor-pointer"
-                      />
-                      <p className="text-[11px] text-stone-500">
-                        Supports your JPG file, PNG, WebP, or SVG. Stored in high-resolution Firestore config.
-                      </p>
-                    </div>
-                  </div>
+                  <AdminImageUploadField
+                    label="Official Brand Logo"
+                    currentImageUrl={settingsForm.logoUrl}
+                    folder="brand"
+                    onUpload={(url) => {
+                      const updated = { ...settingsForm, logoUrl: url };
+                      setSettingsForm(updated);
+                      saveSiteSettings(updated);
+                      setSettingsSaved(true);
+                      setTimeout(() => setSettingsSaved(false), 3000);
+                    }}
+                    onRemove={() => {
+                      const updated = { ...settingsForm, logoUrl: '' };
+                      setSettingsForm(updated);
+                      saveSiteSettings(updated);
+                    }}
+                    helperText="Upload your exact logo file. Automatically updates all navigation bars site-wide."
+                    aspectRatio="aspect-[3/1] max-w-[300px]"
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2842,19 +2783,85 @@ export const AdminPage: React.FC = () => {
 
               {/* Product Images Management with Direct Firebase Storage Upload */}
               <div className="pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-1">
+                  <AdminImageUploadField
+                    label="Primary Product Image *"
+                    currentImageUrl={editingProduct.images?.[0]}
+                    currentStoragePath={editingProduct.galleryImages?.[0]?.storagePath}
+                    folder={`products/${editingProduct.id || 'new'}/primary`}
+                    onUpload={(url, path) => {
+                      const imgs = [...(editingProduct.images || [])];
+                      const gall = [...(editingProduct.galleryImages || [])];
+                      imgs[0] = url;
+                      gall[0] = { id: gall[0]?.id || 'primary', url, storagePath: path, isPrimary: true, sortOrder: 0 };
+                      setEditingProduct({ ...editingProduct, images: imgs, galleryImages: gall });
+                    }}
+                    onRemove={() => {
+                      const imgs = [...(editingProduct.images || [])];
+                      const gall = [...(editingProduct.galleryImages || [])];
+                      imgs[0] = '';
+                      if (gall[0]) gall[0] = { ...gall[0], url: '', storagePath: '' };
+                      setEditingProduct({ ...editingProduct, images: imgs, galleryImages: gall });
+                    }}
+                    helperText="Main image shown in catalog and product page."
+                    aspectRatio="aspect-[3/4]"
+                  />
+
+                  <AdminImageUploadField
+                    label="Secondary / Hover Image"
+                    currentImageUrl={editingProduct.images?.[1]}
+                    currentStoragePath={editingProduct.galleryImages?.[1]?.storagePath}
+                    folder={`products/${editingProduct.id || 'new'}/secondary`}
+                    onUpload={(url, path) => {
+                      const imgs = [...(editingProduct.images || [])];
+                      const gall = [...(editingProduct.galleryImages || [])];
+                      if (!imgs[0]) imgs[0] = ''; // Ensure index 0 exists
+                      imgs[1] = url;
+                      if (!gall[0]) gall[0] = { id: 'primary', url: '', storagePath: '', isPrimary: true, sortOrder: 0 };
+                      gall[1] = { id: gall[1]?.id || 'secondary', url, storagePath: path, isPrimary: false, sortOrder: 1 };
+                      setEditingProduct({ ...editingProduct, images: imgs, galleryImages: gall });
+                    }}
+                    onRemove={() => {
+                      const imgs = [...(editingProduct.images || [])];
+                      const gall = [...(editingProduct.galleryImages || [])];
+                      if (imgs[1]) imgs[1] = '';
+                      if (gall[1]) gall[1] = { ...gall[1], url: '', storagePath: '' };
+                      setEditingProduct({ ...editingProduct, images: imgs, galleryImages: gall });
+                    }}
+                    helperText="Image shown when hovering over product card."
+                    aspectRatio="aspect-[3/4]"
+                  />
+                </div>
+
+                {/* Additional Gallery Images */}
                 <AdminProductImagesManager
                   productId={editingProduct.id || `prod_${Date.now()}`}
-                  images={editingProduct.images || []}
-                  galleryImages={editingProduct.galleryImages || []}
+                  images={(editingProduct.images || []).slice(2)}
+                  galleryImages={(editingProduct.galleryImages || []).slice(2)}
                   onChange={(imgs, galleryImgs) => {
+                    const baseImgs = (editingProduct.images || []).slice(0, 2);
+                    while (baseImgs.length < 2) baseImgs.push('');
+                    
+                    const baseGall = (editingProduct.galleryImages || []).slice(0, 2);
+                    while (baseGall.length < 2) {
+                      const idx = baseGall.length;
+                      baseGall.push({ 
+                        id: idx === 0 ? 'primary' : 'secondary', 
+                        url: '', 
+                        storagePath: '', 
+                        isPrimary: idx === 0, 
+                        sortOrder: idx 
+                      });
+                    }
+
                     setEditingProduct({
                       ...editingProduct,
-                      images: imgs,
-                      galleryImages: galleryImgs,
+                      images: [...baseImgs, ...imgs],
+                      galleryImages: [...baseGall, ...galleryImgs],
                     });
                   }}
-                  label="Product Images"
-                  helperText="Upload images from mobile or desktop. Image 1 is the primary image, Image 2 is shown on hover, and all images form the customer gallery."
+                  label="Additional Gallery Images"
+                  helperText="Upload more images for the product carousel."
                 />
               </div>
 
@@ -2988,15 +2995,15 @@ export const AdminPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold uppercase text-stone-700 mb-1">
-                  Card Cover Image URL *
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={editingCategory.image || ''}
-                  onChange={(e) => setEditingCategory({ ...editingCategory, image: e.target.value })}
-                  className="w-full bg-stone-50 p-2.5 rounded-lg border border-stone-300"
+                <AdminImageUploadField
+                  label="Category Cover Image *"
+                  currentImageUrl={editingCategory.image}
+                  currentStoragePath={editingCategory.imageStoragePath}
+                  folder="categories"
+                  onUpload={(url, path) => setEditingCategory({ ...editingCategory, image: url, imageStoragePath: path })}
+                  onRemove={() => setEditingCategory({ ...editingCategory, image: '', imageStoragePath: '' })}
+                  helperText="Recommended: Square (1:1) or Portrait (3:4) image for best display on shop page."
+                  aspectRatio="aspect-square"
                 />
               </div>
 
@@ -3095,31 +3102,28 @@ export const AdminPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold uppercase text-stone-700 mb-1">
-                  Desktop Image URL *
-                </label>
-                <input
-                  type="url"
-                  required
-                  value={editingBanner.desktopImage || ''}
-                  onChange={(e) =>
-                    setEditingBanner({ ...editingBanner, desktopImage: e.target.value })
-                  }
-                  className="w-full bg-stone-50 p-2.5 rounded-lg border border-stone-300"
+                <AdminImageUploadField
+                  label="Desktop Banner Image *"
+                  currentImageUrl={editingBanner.desktopImage}
+                  currentStoragePath={editingBanner.desktopImageStoragePath}
+                  folder="banners/desktop"
+                  onUpload={(url, path) => setEditingBanner({ ...editingBanner, desktopImage: url, desktopImageStoragePath: path })}
+                  onRemove={() => setEditingBanner({ ...editingBanner, desktopImage: '', desktopImageStoragePath: '' })}
+                  helperText="Recommended: Wide aspect ratio (21:9 or 16:9) for desktop displays."
+                  aspectRatio="aspect-video"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold uppercase text-stone-700 mb-1">
-                  Mobile Image URL (Optional)
-                </label>
-                <input
-                  type="url"
-                  value={editingBanner.mobileImage || ''}
-                  onChange={(e) =>
-                    setEditingBanner({ ...editingBanner, mobileImage: e.target.value })
-                  }
-                  className="w-full bg-stone-50 p-2.5 rounded-lg border border-stone-300"
+                <AdminImageUploadField
+                  label="Mobile Banner Image (Optional)"
+                  currentImageUrl={editingBanner.mobileImage}
+                  currentStoragePath={editingBanner.mobileImageStoragePath}
+                  folder="banners/mobile"
+                  onUpload={(url, path) => setEditingBanner({ ...editingBanner, mobileImage: url, mobileImageStoragePath: path })}
+                  onRemove={() => setEditingBanner({ ...editingBanner, mobileImage: '', mobileImageStoragePath: '' })}
+                  helperText="If empty, the desktop image will be used on mobile devices. Recommended: Portrait aspect (9:16)."
+                  aspectRatio="aspect-[9/16] w-32 mx-auto"
                 />
               </div>
 
@@ -3480,10 +3484,12 @@ export const AdminPage: React.FC = () => {
                   <p>
                     <strong>Cancellation Reason:</strong>{' '}
                     <span className="font-semibold text-rose-900">
-                      {selectedOrderDetails.cancellationReason || 'Requested by customer'}
+                      {selectedOrderDetails.cancelledBy?.toLowerCase() === 'admin'
+                        ? selectedOrderDetails.cancellationReason || 'Order could not be fulfilled'
+                        : selectedOrderDetails.customerCancellationReason || selectedOrderDetails.cancellationReason || 'Requested by customer'}
                     </span>
                   </p>
-                  {selectedOrderDetails.cancellationDetails && (
+                  {selectedOrderDetails.cancelledBy?.toLowerCase() !== 'admin' && selectedOrderDetails.cancellationDetails && (
                     <p className="text-stone-700 italic">
                       <strong>Customer Remarks / Custom Reason:</strong> "{selectedOrderDetails.cancellationDetails}"
                     </p>
@@ -3497,7 +3503,6 @@ export const AdminPage: React.FC = () => {
                         year: 'numeric',
                         hour: '2-digit',
                         minute: '2-digit',
-                        second: '2-digit',
                       })}
                     </p>
                   )}
@@ -3505,12 +3510,48 @@ export const AdminPage: React.FC = () => {
                     <span>
                       Payment: <strong>{selectedOrderDetails.paymentMethod}</strong> ({selectedOrderDetails.paymentStatus})
                     </span>
-                    {selectedOrderDetails.paymentStatus === 'Paid' && (
-                      <span className="text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        Online Payment: Initiate refund via gateway
-                      </span>
-                    )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* If Return Requested */}
+            {(selectedOrderDetails.orderStatus === 'Return Requested' || selectedOrderDetails.returnReason) && (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-2.5 text-xs text-stone-900">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                    <RotateCcw className="w-4 h-4 text-amber-700" />
+                    <span>Customer Return Request</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-950 uppercase tracking-wider">
+                    {selectedOrderDetails.orderStatus}
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-amber-200/70 space-y-1.5">
+                  <p>
+                    <strong>Primary Reason:</strong>{' '}
+                    <span className="font-semibold text-stone-900">
+                      {selectedOrderDetails.returnReason || 'Not specified'}
+                    </span>
+                  </p>
+                  {selectedOrderDetails.returnNotes && (
+                    <p className="text-stone-700 italic">
+                      <strong>Additional Details:</strong> "{selectedOrderDetails.returnNotes}"
+                    </p>
+                  )}
+                  {selectedOrderDetails.returnRequestedAt && (
+                    <p className="text-stone-500 text-[11px]">
+                      <strong>Requested Timestamp:</strong>{' '}
+                      {new Date(selectedOrderDetails.returnRequestedAt).toLocaleString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

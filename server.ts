@@ -5,24 +5,124 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import Razorpay from 'razorpay';
 import { createServer as createViteServer } from 'vite';
-import { db, removeUndefinedFields } from './src/lib/firebase';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import firebaseConfig from './firebase-applet-config.json';
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  increment,
-  collection,
-  getDocs,
-  query,
-  where,
-  limit,
-} from 'firebase/firestore';
 
 dotenv.config();
 
-// Helper to safely get Razorpay client with lazy initialization
+// Initialize Firebase Admin using modular API
+if (getApps().length === 0) {
+  try {
+    initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+  } catch (err) {
+    console.warn('Firebase Admin initialization note:', err);
+  }
+}
+
+const db = getFirestore();
+
+// Rate Limiting for Public Endpoints
+const globalRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { success: false, error: 'Too many requests. Please try again later.' },
+});
+
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { success: false, error: 'Too many authentication attempts. Please try again later.' },
+});
+
+const orderRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Tightened limit for production
+  message: { success: false, error: 'Too many order attempts. Please try again later.' },
+});
+
+const paymentRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, error: 'Payment gateway busy. Please try again later.' },
+});
+
+const uploadRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 50,
+  message: { success: false, error: 'Upload limit reached.' },
+});
+
+// Admin Authentication Middleware
+async function authenticateAdmin(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: Missing admin token.' });
+  }
+
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    const decodedToken = await getAuth().verifyIdToken(token);
+    const uid = decodedToken.uid;
+    const email = (decodedToken.email || '').toLowerCase();
+
+    // 1. Check for Admin Custom Claim (Master Auth)
+    if (decodedToken.admin === true) {
+      req.admin = decodedToken;
+      return next();
+    }
+
+    // 2. Guaranteed Super Admin & Auto-Claim Upgrade
+    if (email === 'dheeraj8933@gmail.com') {
+      try {
+        await getAuth().setCustomUserClaims(uid, { admin: true });
+        console.log(`Upgraded ${email} to admin claims.`);
+      } catch (claimErr) {
+        console.warn('Could not set custom claims:', claimErr);
+      }
+      req.admin = decodedToken;
+      return next();
+    }
+
+    // 3. Fallback: Check Firestore /admins/{uid} and upgrade claim if active
+    const adminSnap = await db.collection('admins').doc(uid).get();
+    if (adminSnap.exists && (adminSnap.data() as any)?.isActive === true) {
+      try {
+        await getAuth().setCustomUserClaims(uid, { admin: true });
+      } catch (claimErr) {
+        console.warn('Could not set custom claims for active admin:', claimErr);
+      }
+      req.admin = decodedToken;
+      return next();
+    }
+
+    return res.status(403).json({ success: false, error: 'Access Denied: Administrative privileges required.' });
+  } catch (err) {
+    console.error('Admin Auth Error:', err);
+    return res.status(401).json({ success: false, error: 'Invalid or expired session. Please log in again.' });
+  }
+}
+
+// Helper to remove undefined fields (Admin SDK is stricter than Client SDK with some settings)
+function removeUndefinedFields(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) return obj.map(removeUndefinedFields);
+  if (typeof obj === 'object' && !(obj instanceof Date)) {
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) cleaned[key] = removeUndefinedFields(value);
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
 function getRazorpayClient(): Razorpay | null {
   const key_id = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
   const key_secret = process.env.RAZORPAY_KEY_SECRET;
@@ -99,9 +199,9 @@ async function calculateVerifiedOrder(body: {
 
     try {
       if (item.productId) {
-        const productDoc = await getDoc(doc(db, 'products', item.productId));
-        if (productDoc.exists()) {
-          const pData = productDoc.data();
+        const productDoc = await db.collection('products').doc(item.productId).get();
+        if (productDoc.exists) {
+          const pData = productDoc.data() as any;
           verifiedPrice = Number(pData.sellingPrice) || verifiedPrice;
           verifiedMrp = Number(pData.mrp) || verifiedMrp;
           productName = pData.name || productName;
@@ -136,7 +236,7 @@ async function calculateVerifiedOrder(body: {
   if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
     const cleanCode = couponCode.trim().toUpperCase();
     try {
-      const couponsSnap = await getDocs(collection(db, 'coupons'));
+      const couponsSnap = await db.collection('coupons').get();
       const foundCoupon = couponsSnap.docs.find(
         (c) => c.data().code?.toUpperCase() === cleanCode && c.data().isActive !== false
       );
@@ -166,9 +266,9 @@ async function calculateVerifiedOrder(body: {
   // Shipping calculation from siteSettings
   let shippingCharge = 0;
   try {
-    const settingsDoc = await getDoc(doc(db, 'siteSettings', 'global'));
-    if (settingsDoc.exists()) {
-      const s = settingsDoc.data();
+    const settingsDoc = await db.collection('siteSettings').doc('global').get();
+    if (settingsDoc.exists) {
+      const s = settingsDoc.data() as any;
       const threshold = Number(s.freeShippingThreshold) || 999;
       const baseRate = Number(s.shippingCharge) || 99;
       shippingCharge = subtotal >= threshold ? 0 : baseRate;
@@ -217,7 +317,33 @@ async function calculateVerifiedOrder(body: {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  // Force Port 3000 as per AI Studio environment constraints
+  const PORT = 3000;
+
+  // Production Security Headers (Helmet)
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "*.google.com", "*.gstatic.com", "*.razorpay.com", "blob:", "https://*.google.com", "https://*.gstatic.com", "https://*.razorpay.com"],
+          styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "https://fonts.googleapis.com"],
+          fontSrc: ["'self'", "fonts.gstatic.com", "https://fonts.gstatic.com", "data:", "https://fonts.googleapis.com"],
+          imgSrc: ["'self'", "data:", "*.google.com", "*.gstatic.com", "*.googleusercontent.com", "*.firebasestorage.app", "storage.googleapis.com", "*.razorpay.com", "blob:", "https://*.googleapis.com", "https://*.firebasestorage.app"],
+          connectSrc: ["'self'", "*.google.com", "*.googleapis.com", "*.firebaseapp.com", "*.razorpay.com", "https://*.firebasestorage.app", "https://storage.googleapis.com", "wss://*.run.app", "ws://localhost:*"],
+          frameSrc: ["'self'", "*.google.com", "*.firebaseapp.com", "*.razorpay.com"],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests: null, // Explicitly disable to prevent dev proxy issues
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    })
+  );
+
+  // Global Rate Limiter
+  app.use(globalRateLimit);
 
   // JSON request body parser with rawBody capture for webhook signature verification
   app.use(
@@ -290,7 +416,7 @@ async function startServer() {
   });
 
   // 2. Razorpay Public Configuration Endpoint
-  const handleGetConfig = (req: express.Request, res: express.Response) => {
+  app.get('/api/razorpay/config', (req, res) => {
     const keyId = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || '';
     const hasSecret = Boolean(process.env.RAZORPAY_KEY_SECRET);
     res.json({
@@ -298,13 +424,11 @@ async function startServer() {
       isConfigured: Boolean(keyId && hasSecret),
       currency: 'INR',
     });
-  };
-  app.get('/api/razorpay/config', handleGetConfig);
-  app.get('/api/payment/config', handleGetConfig);
+  });
 
   // 3. Trusted Server-Side Order Creation (For Cash on Delivery & Direct Checkout)
   // Ensures product prices, coupons, and totals are computed from the database
-  app.post('/api/orders/create', async (req, res) => {
+  app.post('/api/orders/create', orderRateLimit, async (req, res) => {
     try {
       const { paymentMethod } = req.body;
       const verified = await calculateVerifiedOrder(req.body);
@@ -322,7 +446,7 @@ async function startServer() {
         discount: verified.discount,
         shippingCharge: verified.shippingCharge,
         total: verified.total,
-        paymentMethod: paymentMethod === 'Cash on Delivery' ? 'Cash on Delivery' : 'Cash on Delivery',
+        paymentMethod: 'Cash on Delivery',
         // Crucial security invariant: paymentStatus on creation is ALWAYS Pending
         paymentStatus: 'Pending',
         orderStatus: 'Confirmed',
@@ -337,13 +461,13 @@ async function startServer() {
 
       // Persist to Firestore
       const sanitized = removeUndefinedFields(orderDoc);
-      await setDoc(doc(db, 'orders', verified.orderNumber), sanitized);
+      await db.collection('orders').doc(verified.orderNumber).set(sanitized);
 
       // Increment coupon usage count if applied
       if (verified.appliedCouponId) {
         try {
-          await updateDoc(doc(db, 'coupons', verified.appliedCouponId), {
-            usedCount: increment(1),
+          await db.collection('coupons').doc(verified.appliedCouponId).update({
+            usedCount: FieldValue.increment(1),
             updatedAt: new Date().toISOString(),
           });
         } catch (couponErr) {
@@ -367,7 +491,7 @@ async function startServer() {
 
   // 4. Create Razorpay Order with live database price & coupon validation
   // Supports POST /api/razorpay/create-order and POST /api/payment/create-order
-  const handleCreateRazorpayOrder = async (req: express.Request, res: express.Response) => {
+  app.post('/api/razorpay/create-order', paymentRateLimit, async (req: express.Request, res: express.Response) => {
     try {
       const verified = await calculateVerifiedOrder(req.body);
 
@@ -428,7 +552,7 @@ async function startServer() {
 
       try {
         const sanitized = removeUndefinedFields(pendingOrder);
-        await setDoc(doc(db, 'orders', verified.orderNumber), sanitized);
+        await db.collection('orders').doc(verified.orderNumber).set(sanitized);
       } catch (fsErr) {
         console.warn('Could not persist pending order in Firestore:', fsErr);
       }
@@ -448,13 +572,11 @@ async function startServer() {
       const errMsg = err?.error?.description || err?.message || 'Failed to initialize payment gateway order.';
       return res.status(500).json({ success: false, error: errMsg });
     }
-  };
-  app.post('/api/razorpay/create-order', handleCreateRazorpayOrder);
-  app.post('/api/payment/create-order', handleCreateRazorpayOrder);
+  });
 
   // 5. Verify Razorpay Payment Signature and finalize order (Trusted Backend ONLY)
   // Supports POST /api/razorpay/verify-payment and POST /api/payment/verify-payment
-  const handleVerifyRazorpayPayment = async (req: express.Request, res: express.Response) => {
+  app.post('/api/razorpay/verify-payment', paymentRateLimit, async (req: express.Request, res: express.Response) => {
     try {
       const {
         orderNumber,
@@ -480,10 +602,10 @@ async function startServer() {
       }
 
       // Check existing order in Firestore to prevent duplicate processing (Idempotency)
-      const orderRef = doc(db, 'orders', orderNumber);
-      const orderSnap = await getDoc(orderRef);
-      if (orderSnap.exists()) {
-        const existingData = orderSnap.data();
+      const orderRef = db.collection('orders').doc(orderNumber);
+      const orderSnap = await orderRef.get();
+      if (orderSnap.exists) {
+        const existingData = orderSnap.data() as any;
         if (existingData.paymentStatus === 'Paid') {
           return res.json({
             success: true,
@@ -508,7 +630,7 @@ async function startServer() {
       if (!isSignatureValid) {
         // Mark payment as failed in Firestore
         try {
-          await updateDoc(orderRef, {
+          await db.collection('orders').doc(orderNumber).update({
             paymentStatus: 'Failed',
             updatedAt: new Date().toISOString(),
             notes: 'Payment signature verification failed. Order not confirmed.',
@@ -539,7 +661,7 @@ async function startServer() {
 
       if (!paymentCaptured) {
         try {
-          await updateDoc(orderRef, {
+          await db.collection('orders').doc(orderNumber).update({
             paymentStatus: 'Failed',
             updatedAt: new Date().toISOString(),
           });
@@ -565,7 +687,7 @@ async function startServer() {
       };
 
       try {
-        await updateDoc(orderRef, updateData);
+        await db.collection('orders').doc(orderNumber).update(updateData);
       } catch (fsErr) {
         console.warn('Could not update order status in Firestore:', fsErr);
       }
@@ -573,8 +695,8 @@ async function startServer() {
       // Increment coupon usage count if a coupon was used
       if (appliedCouponId) {
         try {
-          await updateDoc(doc(db, 'coupons', appliedCouponId), {
-            usedCount: increment(1),
+          await db.collection('coupons').doc(appliedCouponId).update({
+            usedCount: FieldValue.increment(1),
             updatedAt: now,
           });
         } catch (couponUpdateErr) {
@@ -596,14 +718,16 @@ async function startServer() {
         error: 'Server error during payment verification.',
       });
     }
-  };
-  app.post('/api/razorpay/verify-payment', handleVerifyRazorpayPayment);
-  app.post('/api/payment/verify-payment', handleVerifyRazorpayPayment);
+  });
+  app.post('/api/payment/verify-payment', paymentRateLimit, async (req: express.Request, res: express.Response) => {
+    // Alias route for payment verification
+    res.redirect(307, '/api/razorpay/verify-payment');
+  });
 
   // 6. Razorpay Webhook Endpoint
   // Supports POST /api/razorpay/webhook and POST /api/payment/webhook
   // Handles server-to-server webhook events (payment.captured, order.paid, payment.failed)
-  const handleRazorpayWebhook = async (req: express.Request, res: express.Response) => {
+  app.post('/api/razorpay/webhook', async (req: express.Request, res: express.Response) => {
     try {
       const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
       const signature = req.headers['x-razorpay-signature'] as string;
@@ -652,9 +776,9 @@ async function startServer() {
         let targetOrderData = null;
 
         if (orderNumber) {
-          const directRef = doc(db, 'orders', orderNumber);
-          const snap = await getDoc(directRef);
-          if (snap.exists()) {
+          const directRef = db.collection('orders').doc(orderNumber);
+          const snap = await directRef.get();
+          if (snap.exists) {
             targetOrderRef = directRef;
             targetOrderData = snap.data();
           }
@@ -663,12 +787,7 @@ async function startServer() {
         // Fallback search by razorpayOrderId
         if (!targetOrderRef && razorpayOrderId) {
           try {
-            const q = query(
-              collection(db, 'orders'),
-              where('razorpayOrderId', '==', razorpayOrderId),
-              limit(1)
-            );
-            const querySnap = await getDocs(q);
+            const querySnap = await db.collection('orders').where('razorpayOrderId', '==', razorpayOrderId).limit(1).get();
             if (!querySnap.empty) {
               targetOrderRef = querySnap.docs[0].ref;
               targetOrderData = querySnap.docs[0].data();
@@ -686,7 +805,7 @@ async function startServer() {
           }
 
           const now = new Date().toISOString();
-          await updateDoc(targetOrderRef, {
+          await targetOrderRef.update({
             paymentStatus: 'Paid',
             orderStatus: 'Confirmed',
             razorpayPaymentId: razorpayPaymentId || targetOrderData.razorpayPaymentId,
@@ -703,10 +822,10 @@ async function startServer() {
         const errorDescription = paymentEntity?.error_description || 'Payment failed';
 
         if (orderNumber) {
-          const directRef = doc(db, 'orders', orderNumber);
-          const snap = await getDoc(directRef);
-          if (snap.exists() && snap.data().paymentStatus !== 'Paid') {
-            await updateDoc(directRef, {
+          const directRef = db.collection('orders').doc(orderNumber);
+          const snap = await directRef.get();
+          if (snap.exists && snap.data()?.paymentStatus !== 'Paid') {
+            await directRef.update({
               paymentStatus: 'Failed',
               updatedAt: new Date().toISOString(),
               notes: `Payment failed via Razorpay Webhook: ${errorDescription}`,
@@ -722,19 +841,17 @@ async function startServer() {
       // Return 200 or 500 depending on recoverable state
       return res.status(500).json({ success: false, error: 'Internal webhook handler error.' });
     }
-  };
-  app.post('/api/razorpay/webhook', handleRazorpayWebhook);
-  app.post('/api/payment/webhook', handleRazorpayWebhook);
+  });
 
   // 7. Mark Payment as Failed / Cancelled when dismissed or failed in modal
-  const handleMarkPaymentFailed = async (req: express.Request, res: express.Response) => {
+  app.post('/api/razorpay/mark-failed', async (req: express.Request, res: express.Response) => {
     try {
       const { orderNumber, reason } = req.body;
       if (orderNumber) {
-        const orderRef = doc(db, 'orders', orderNumber);
-        const snap = await getDoc(orderRef);
-        if (snap.exists() && snap.data().paymentStatus !== 'Paid') {
-          await updateDoc(orderRef, {
+        const orderRef = db.collection('orders').doc(orderNumber);
+        const snap = await orderRef.get();
+        if (snap.exists && snap.data()?.paymentStatus !== 'Paid') {
+          await orderRef.update({
             paymentStatus: 'Failed',
             updatedAt: new Date().toISOString(),
             notes: reason || 'Customer dismissed or failed payment window.',
@@ -745,9 +862,18 @@ async function startServer() {
     } catch (e) {
       res.status(500).json({ success: false, error: 'Could not mark order as failed' });
     }
-  };
-  app.post('/api/razorpay/mark-failed', handleMarkPaymentFailed);
-  app.post('/api/payment/mark-failed', handleMarkPaymentFailed);
+  });
+  app.post('/api/payment/mark-failed', async (req, res) => {
+    res.redirect(307, '/api/razorpay/mark-failed');
+  });
+
+  // Alias for legacy payment routes
+  app.post('/api/payment/create-order', paymentRateLimit, async (req, res) => {
+    res.redirect(307, '/api/razorpay/create-order');
+  });
+  app.post('/api/payment/webhook', async (req, res) => {
+    res.redirect(307, '/api/razorpay/webhook');
+  });
 
   // 8. Secure Guest Order Cancellation
   app.post('/api/orders/cancel-guest', async (req, res) => {
@@ -757,13 +883,13 @@ async function startServer() {
         return res.status(400).json({ success: false, error: 'Order number is required.' });
       }
 
-      const orderRef = doc(db, 'orders', orderNumber);
-      const orderSnap = await getDoc(orderRef);
-      if (!orderSnap.exists()) {
+      const orderRef = db.collection('orders').doc(orderNumber);
+      const orderSnap = await orderRef.get();
+      if (!orderSnap.exists) {
         return res.status(404).json({ success: false, error: 'Order not found.' });
       }
 
-      const orderData = orderSnap.data();
+      const orderData = orderSnap.data() as any;
       if (orderData.userId !== 'guest') {
         return res.status(403).json({ success: false, error: 'Only guest orders can be cancelled via this endpoint.' });
       }
@@ -799,7 +925,7 @@ async function startServer() {
         updatedAt: now,
       };
 
-      await updateDoc(orderRef, updatePayload);
+      await orderRef.update(updatePayload);
       return res.json({ success: true, orderNumber });
     } catch (err: any) {
       console.error('Error cancelling guest order:', err?.message || err);
@@ -819,7 +945,7 @@ async function startServer() {
   // Storage structure:
   // General: products/{productId}/general/{uniqueFileName}
   // Color: products/{productId}/colors/{colorId}/{uniqueFileName}
-  app.post('/api/upload-image', async (req: express.Request, res: express.Response) => {
+  app.post('/api/upload-image', uploadRateLimit, authenticateAdmin, async (req: express.Request, res: express.Response) => {
     try {
       const { fileName, contentType, base64Data, productId, folder, colorId, type } = req.body;
       if (!base64Data || !fileName) {
@@ -839,6 +965,11 @@ async function startServer() {
       } else if (folder === 'colors' && colorId) {
         relativeFolder = path.join('products', cleanProductId, 'colors', colorId.replace(/[^a-zA-Z0-9_-]/g, '_'));
         storagePath = `products/${cleanProductId}/colors/${colorId.replace(/[^a-zA-Z0-9_-]/g, '_')}/${uniqueName}`;
+      } else if (folder && folder !== 'general') {
+        // Support for custom folders like categories, banners, site-settings, etc.
+        const safeFolder = folder.replace(/[^a-zA-Z0-9_/]/g, '_');
+        relativeFolder = safeFolder;
+        storagePath = `${safeFolder}/${uniqueName}`;
       } else {
         relativeFolder = path.join('products', cleanProductId, 'general');
         storagePath = `products/${cleanProductId}/general/${uniqueName}`;
@@ -854,31 +985,24 @@ async function startServer() {
       const rawBuffer = Buffer.from(pureBase64, 'base64');
       fs.writeFileSync(filePath, rawBuffer);
 
-      // Attempt background upload to Firebase Storage if available
+      // Use Firebase Admin Storage SDK for secure server-side upload
       let firebaseDownloadUrl: string | null = null;
       try {
-        const bucket = firebaseConfig.storageBucket || 'handy-silicon-d9v0l.appspot.com';
-        const uploadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o?uploadType=media&name=${encodeURIComponent(storagePath)}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const bucket = getStorage().bucket(firebaseConfig.storageBucket || 'handy-silicon-d9v0l.firebasestorage.app');
+        const file = bucket.file(storagePath);
 
-        const fbRes = await fetch(uploadUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': contentType || 'image/jpeg',
-            'X-Goog-Upload-Protocol': 'raw',
+        await file.save(rawBuffer, {
+          metadata: {
+            contentType: contentType || 'image/jpeg',
           },
-          body: rawBuffer,
-          signal: controller.signal,
+          public: true, // Make public for easy web access as requested by existing rules
         });
-        clearTimeout(timeoutId);
 
-        if (fbRes.ok) {
-          const data = (await fbRes.json()) as any;
-          firebaseDownloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodeURIComponent(storagePath)}?alt=media${data.downloadTokens ? `&token=${data.downloadTokens}` : ''}`;
-        }
+        // The public URL for Firebase Storage objects
+        firebaseDownloadUrl = `https://storage.googleapis.com/${bucket.name}/${encodeURIComponent(storagePath)}`;
       } catch (fbErr) {
         // Fallback to local static URL seamlessly
+        console.warn('Firebase Storage background upload failed, using local fallback:', fbErr);
       }
 
       const localUrl = `/uploads/${relativeFolder.replace(/\\/g, '/')}/${uniqueName}`;
@@ -898,7 +1022,7 @@ async function startServer() {
   });
 
   // Product Image Delete API
-  app.post('/api/delete-image', (req: express.Request, res: express.Response) => {
+  app.post('/api/delete-image', authenticateAdmin, (req: express.Request, res: express.Response) => {
     try {
       const { storagePath } = req.body;
       if (!storagePath) {

@@ -22,22 +22,40 @@ service firebase.storage {
       );
     }
 
+    // Helper for validating image uploads
+    function isValidImage() {
+      return request.resource.size < 5 * 1024 * 1024 // 5MB limit
+          && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+    }
+
     // Public read for fashion images, product catalogs, banners and media assets
     // Writes (uploads, updates, deletes) reserved for authorized administrators and staff
     match /products/{productId}/{allPaths=**} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin() && (request.method == 'DELETE' || isValidImage());
+    }
+
+    // Categories
+    match /categories/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && (request.method == 'DELETE' || isValidImage());
+    }
+
+    // Banners
+    match /banners/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin() && (request.method == 'DELETE' || isValidImage());
     }
 
     // Community & Styling Gallery images (#FashineryWomen)
     match /community-gallery/{allPaths=**} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin() && (request.method == 'DELETE' || isValidImage());
     }
 
     match /{allPaths=**} {
       allow read: if true;
-      allow write: if isSignedIn();
+      allow write: if isAdmin() && (request.method == 'DELETE' || isValidImage());
     }
   }
 }

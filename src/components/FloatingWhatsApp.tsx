@@ -29,11 +29,11 @@ export const FloatingWhatsApp: React.FC = () => {
       <button
         id="btn-floating-whatsapp"
         onClick={openGeneralWhatsApp}
-        className="group relative flex items-center justify-center w-14 h-14 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-full shadow-2xl hover:shadow-emerald-500/40 transition-all duration-300 transform hover:scale-110 cursor-pointer"
+        className="group relative flex items-center justify-center w-14 h-14 bg-[#25D366] hover:brightness-90 text-white rounded-full shadow-lg hover:shadow-[0_20px_40px_rgba(37,211,102,0.3)] transition-all duration-300 ease-in-out transform hover:scale-110 hover:-rotate-6 active:scale-95 cursor-pointer"
         aria-label="Chat with Fashinery on WhatsApp"
       >
-        <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-25" />
-        <MessageCircle className="w-7 h-7 fill-white" />
+        <span className="absolute inset-0 rounded-full bg-[#25D366] animate-ping opacity-20" />
+        <MessageCircle className="w-7 h-7 fill-white transition-transform duration-500 group-hover:scale-110" />
       </button>
     </div>
   );

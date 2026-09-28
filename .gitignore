@@ -1,8 +1,14 @@
+.env*
+!.env.example
+*.pem
+service-account*.json
+firebase-applet-config.json
+firebase_applet_config.xml
+*.key
+*.cert
 node_modules/
-build/
 dist/
+build/
 coverage/
 .DS_Store
 *.log
-.env*
-!.env.example

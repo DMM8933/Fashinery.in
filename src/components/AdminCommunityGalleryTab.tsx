@@ -23,6 +23,7 @@ import {
   OFFICIAL_FASHINERY_INSTAGRAM,
 } from '../types';
 import { uploadGalleryImage, deleteProductImageFile } from '../lib/imageStorage';
+import { auth } from '../lib/firebase';
 
 export const AdminCommunityGalleryTab: React.FC = () => {
   const { settings, saveCommunityGallery, isAdmin } = useStore();
@@ -96,9 +97,10 @@ export const AdminCommunityGalleryTab: React.FC = () => {
     setUploadProgress((prev) => ({ ...prev, [itemId]: 10 }));
 
     try {
+      const idToken = await auth.currentUser?.getIdToken();
       const result = await uploadGalleryImage(file, (progress) => {
         setUploadProgress((prev) => ({ ...prev, [itemId]: progress }));
-      });
+      }, idToken);
 
       // Update item in state with new image URL and storagePath
       setItems((prev) =>
@@ -106,7 +108,7 @@ export const AdminCommunityGalleryTab: React.FC = () => {
           if (item.id === itemId) {
             // If old image had a storagePath, clean it up asynchronously
             if (item.storagePath && item.storagePath !== result.storagePath) {
-              deleteProductImageFile(item.storagePath).catch(() => {});
+              deleteProductImageFile(item.storagePath, idToken).catch(() => {});
             }
             return {
               ...item,
@@ -180,7 +182,12 @@ export const AdminCommunityGalleryTab: React.FC = () => {
 
     // Delete from storage if storagePath exists
     if (targetItem.storagePath) {
-      deleteProductImageFile(targetItem.storagePath).catch(() => {});
+      try {
+        const idToken = await auth.currentUser?.getIdToken();
+        deleteProductImageFile(targetItem.storagePath, idToken).catch(() => {});
+      } catch (err) {
+        console.warn('Auth token retrieval for delete slot:', err);
+      }
     }
 
     setItems((prev) => {
