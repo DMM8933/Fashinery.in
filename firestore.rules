@@ -154,7 +154,7 @@ service cloud.firestore {
         )
       );
       
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && resource.data.orderStatus == 'Cancelled';
     }
 
     // 8. Coupons (Discount Verification)

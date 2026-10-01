@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -36,6 +36,7 @@ import {
   X,
   Ban,
   Instagram,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { BrandLogo } from '../components/BrandLogo';
@@ -100,6 +101,7 @@ export const AdminPage: React.FC = () => {
     updateContactStatus,
     deleteContact,
     updateOrderStatus,
+    deleteCancelledOrder,
     adminApproveCancellation,
     adminRejectCancellation,
     markOrderAsPaid,
@@ -155,8 +157,25 @@ export const AdminPage: React.FC = () => {
   const [orderUpdateError, setOrderUpdateError] = useState<string | null>(null);
   const [orderUpdateSuccess, setOrderUpdateSuccess] = useState<string | null>(null);
   const [isUpdatingOrder, setIsUpdatingOrder] = useState(false);
+  
+  // Delete Cancelled Order Modal State
+  const [deleteOrderConfirmModalOpen, setDeleteOrderConfirmModalOpen] = useState(false);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [isDeletingOrder, setIsDeletingOrder] = useState(false);
+  const [deleteOrderError, setDeleteOrderError] = useState<string | null>(null);
   const [adminCancelReason, setAdminCancelReason] = useState('Customer requested cancellation');
   const [adminCancelCustomText, setAdminCancelCustomText] = useState('');
+
+  // Analytics Filter State
+  const [analyticsRange, setAnalyticsRange] = useState<'day' | 'week' | 'month' | 'custom'>('month');
+  const [analyticsStartDate, setAnalyticsStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [analyticsEndDate, setAnalyticsEndDate] = useState(() => {
+    return new Date().toISOString().split('T')[0];
+  });
   
   // Manual payment marking states
   const [showMarkAsPaidForm, setShowMarkAsPaidForm] = useState(false);
@@ -262,6 +281,154 @@ export const AdminPage: React.FC = () => {
   const totalOrdersCount = orders.length;
   const pendingOrdersCount = orders.filter((o) => o.orderStatus === 'Confirmed' || o.orderStatus === 'Processing').length;
   const lowStockProducts = products.filter((p) => p.stock <= p.lowStockThreshold);
+
+  // Professional Sales Analytics & Metrics
+  const analyticsData = useMemo(() => {
+    const now = new Date();
+    let start: Date;
+    let end: Date = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    if (analyticsRange === 'day') {
+      start = new Date();
+      start.setHours(0, 0, 0, 0);
+    } else if (analyticsRange === 'week') {
+      start = new Date();
+      const day = start.getDay();
+      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+      start.setDate(diff);
+      start.setHours(0, 0, 0, 0);
+    } else if (analyticsRange === 'month') {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      start.setHours(0, 0, 0, 0);
+    } else {
+      start = new Date(analyticsStartDate);
+      start.setHours(0, 0, 0, 0);
+      if (analyticsEndDate) {
+        end = new Date(analyticsEndDate);
+        end.setHours(23, 59, 59, 999);
+      }
+    }
+
+    const filtered = (orders || []).filter((o) => {
+      const orderDate = new Date(o.createdAt || o.updatedAt || Date.now());
+      return orderDate >= start && orderDate <= end;
+    });
+
+    const totalOrders = filtered.length;
+    const grossSales = filtered.reduce((acc, o) => acc + (o.total || 0), 0);
+    const paidSales = filtered.reduce((acc, o) => (o.paymentStatus === 'Paid' ? acc + (o.total || 0) : acc), 0);
+    const pendingSales = filtered.reduce((acc, o) => (o.paymentStatus === 'Pending' ? acc + (o.total || 0) : acc), 0);
+    
+    const cancelledOrders = filtered.filter((o) => o.orderStatus === 'Cancelled');
+    const cancelledOrdersCount = cancelledOrders.length;
+    const cancelledOrdersValue = cancelledOrders.reduce((acc, o) => acc + (o.total || 0), 0);
+    const refundedValue = filtered.reduce((acc, o) => (o.paymentStatus === 'Refunded' ? acc + (o.total || 0) : acc), 0);
+
+    const netSales = grossSales - cancelledOrdersValue - refundedValue;
+
+    let prevGrossSales = 0;
+    let prevTotalOrders = 0;
+    let prevCancelledCount = 0;
+    if (analyticsRange === 'month') {
+      const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      const prevFiltered = (orders || []).filter((o) => {
+        const d = new Date(o.createdAt || o.updatedAt || Date.now());
+        return d >= prevStart && d <= prevEnd;
+      });
+      prevTotalOrders = prevFiltered.length;
+      prevGrossSales = prevFiltered.reduce((acc, o) => (o.orderStatus !== 'Cancelled' ? acc + (o.total || 0) : acc), 0);
+      prevCancelledCount = prevFiltered.filter((o) => o.orderStatus === 'Cancelled').length;
+    }
+
+    let salesChangePercent: string | number = 'N/A';
+    if (analyticsRange === 'month' && prevGrossSales > 0) {
+      salesChangePercent = Math.round(((netSales - prevGrossSales) / prevGrossSales) * 100);
+    } else if (analyticsRange === 'month' && prevGrossSales === 0 && netSales > 0) {
+      salesChangePercent = '+100%';
+    }
+
+    const breakdownMap: Record<string, { label: string; orderCount: number; grossSales: number; paidSales: number; pendingSales: number; cancelledCount: number; netSales: number }> = {};
+
+    filtered.forEach((o) => {
+      const d = new Date(o.createdAt || o.updatedAt || Date.now());
+      let key = d.toISOString().split('T')[0];
+      if (analyticsRange === 'week') {
+        key = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+      } else if (analyticsRange === 'month') {
+        key = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      }
+
+      if (!breakdownMap[key]) {
+        breakdownMap[key] = { label: key, orderCount: 0, grossSales: 0, paidSales: 0, pendingSales: 0, cancelledCount: 0, netSales: 0 };
+      }
+
+      breakdownMap[key].orderCount += 1;
+      breakdownMap[key].grossSales += (o.total || 0);
+      if (o.paymentStatus === 'Paid') breakdownMap[key].paidSales += (o.total || 0);
+      if (o.paymentStatus === 'Pending') breakdownMap[key].pendingSales += (o.total || 0);
+      if (o.orderStatus === 'Cancelled') {
+        breakdownMap[key].cancelledCount += 1;
+      } else {
+        breakdownMap[key].netSales += (o.total || 0);
+      }
+    });
+
+    const breakdownRows = Object.values(breakdownMap).sort((a, b) => a.label.localeCompare(b.label));
+
+    return {
+      totalOrders,
+      grossSales,
+      paidSales,
+      pendingSales,
+      cancelledOrdersCount,
+      cancelledOrdersValue,
+      netSales,
+      salesChangePercent,
+      prevGrossSales,
+      prevTotalOrders,
+      prevCancelledCount,
+      breakdownRows,
+    };
+  }, [orders, analyticsRange, analyticsStartDate, analyticsEndDate]);
+
+  const handleExportCSV = () => {
+    const rows = [
+      ['Fashinery Sales Report', `Range: ${analyticsRange.toUpperCase()}`],
+      ['Metric', 'Value'],
+      ['Total Orders', analyticsData.totalOrders],
+      ['Gross Sales (₹)', analyticsData.grossSales],
+      ['Paid Sales (₹)', analyticsData.paidSales],
+      ['Pending Payment (₹)', analyticsData.pendingSales],
+      ['Cancelled Orders', analyticsData.cancelledOrdersCount],
+      ['Cancelled Orders Value (₹)', analyticsData.cancelledOrdersValue],
+      ['Net Sales (₹)', analyticsData.netSales],
+      [],
+      ['Period / Date', 'Orders', 'Gross Sales (₹)', 'Paid (₹)', 'Pending (₹)', 'Cancelled', 'Net Sales (₹)']
+    ];
+
+    analyticsData.breakdownRows.forEach((row: any) => {
+      rows.push([
+        row.label,
+        row.orderCount,
+        row.grossSales,
+        row.paidSales,
+        row.pendingSales,
+        row.cancelledCount,
+        row.netSales
+      ]);
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `fashinery_sales_report_${analyticsRange}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Product save handler
   const handleSaveProductSubmit = async (e: React.FormEvent) => {
@@ -580,55 +747,234 @@ export const AdminPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Metric Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Sales Analytics Toolbar */}
+              <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                <div className="flex items-center gap-1.5 p-1 bg-stone-100 rounded-xl overflow-x-auto">
+                  <button
+                    type="button"
+                    onClick={() => setAnalyticsRange('day')}
+                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                      analyticsRange === 'day' ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    DAY
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnalyticsRange('week')}
+                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                      analyticsRange === 'week' ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    WEEK
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnalyticsRange('month')}
+                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                      analyticsRange === 'month' ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    MONTH
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnalyticsRange('custom')}
+                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                      analyticsRange === 'custom' ? 'bg-stone-900 text-white shadow-xs' : 'text-stone-600 hover:text-stone-950'
+                    }`}
+                  >
+                    CUSTOM RANGE
+                  </button>
+                </div>
+
+                {/* Custom Date Range Pickers */}
+                {analyticsRange === 'custom' && (
+                  <div className="flex items-center gap-2 flex-wrap text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-stone-500 font-medium">From:</span>
+                      <input
+                        type="date"
+                        value={analyticsStartDate}
+                        onChange={(e) => setAnalyticsStartDate(e.target.value)}
+                        className="bg-stone-50 border border-stone-300 rounded-xl px-3 py-1.5 text-stone-900 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-stone-500 font-medium">To:</span>
+                      <input
+                        type="date"
+                        value={analyticsEndDate}
+                        onChange={(e) => setAnalyticsEndDate(e.target.value)}
+                        className="bg-stone-50 border border-stone-300 rounded-xl px-3 py-1.5 text-stone-900 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Export CSV Button */}
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold uppercase tracking-wider px-4 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs shrink-0"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+
+              {/* Month Comparison Banner */}
+              {analyticsRange === 'month' && (
+                <div className="bg-amber-50/70 border border-amber-200/80 p-4 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-800 shrink-0" />
+                    <span className="font-semibold text-stone-900">
+                      Month-over-Month Comparison:
+                    </span>
+                    <span className="text-stone-600">
+                      Previous Month Sales: <strong>₹{analyticsData.prevGrossSales.toLocaleString('en-IN')}</strong> ({analyticsData.prevTotalOrders} orders, {analyticsData.prevCancelledCount} cancelled)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-stone-500">Growth vs Last Month:</span>
+                    <span className={`font-bold px-2.5 py-1 rounded-full text-xs ${
+                      typeof analyticsData.salesChangePercent === 'string' && analyticsData.salesChangePercent === 'N/A'
+                        ? 'bg-stone-200 text-stone-700'
+                        : typeof analyticsData.salesChangePercent === 'number' && analyticsData.salesChangePercent >= 0
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {analyticsData.salesChangePercent === 'N/A' ? 'N/A' : `${analyticsData.salesChangePercent}%`}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 6 Professional Sales Analytics Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
                   <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
-                    Gross Order Revenue
+                    Total Sales (Gross)
                   </span>
                   <span className="font-serif text-2xl font-bold text-stone-900 mt-1 block">
-                    ₹{totalRevenue.toLocaleString('en-IN')}
+                    ₹{analyticsData.grossSales.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-[11px] text-stone-500 font-medium">
+                    {analyticsRange.toUpperCase()} view
+                  </span>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
+                  <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
+                    Total Orders
+                  </span>
+                  <span className="font-serif text-2xl font-bold text-stone-900 mt-1 block">
+                    {analyticsData.totalOrders} Orders
+                  </span>
+                  <span className="text-[11px] text-stone-500 font-medium">
+                    Placed in period
+                  </span>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
+                  <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
+                    Paid Sales
+                  </span>
+                  <span className="font-serif text-2xl font-bold text-emerald-700 mt-1 block">
+                    ₹{analyticsData.paidSales.toLocaleString('en-IN')}
                   </span>
                   <span className="text-[11px] text-emerald-600 font-medium">
-                    Across {totalOrdersCount} orders placed
+                    Verified online / settled
                   </span>
                 </div>
 
                 <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
                   <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
-                    Active Catalog Items
+                    Pending Payment
                   </span>
-                  <span className="font-serif text-2xl font-bold text-stone-900 mt-1 block">
-                    {products.length} Garments
+                  <span className="font-serif text-2xl font-bold text-amber-800 mt-1 block">
+                    ₹{analyticsData.pendingSales.toLocaleString('en-IN')}
                   </span>
-                  <span className="text-[11px] text-stone-500 font-medium">
-                    In {categories.length} silhouettes
-                  </span>
-                </div>
-
-                <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
-                  <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
-                    Pending Dispatches
-                  </span>
-                  <span className="font-serif text-2xl font-bold text-amber-900 mt-1 block">
-                    {pendingOrdersCount} Orders
-                  </span>
-                  <span className="text-[11px] text-stone-500 font-medium">
-                    Requires packing / pickup
+                  <span className="text-[11px] text-amber-700 font-medium">
+                    COD / pending capture
                   </span>
                 </div>
 
                 <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
                   <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
-                    Low Stock Alert
+                    Cancelled Orders
                   </span>
-                  <span className="font-serif text-2xl font-bold text-rose-600 mt-1 block">
-                    {lowStockProducts.length} Items
+                  <span className="font-serif text-2xl font-bold text-rose-700 mt-1 block">
+                    {analyticsData.cancelledOrdersCount} (₹{analyticsData.cancelledOrdersValue.toLocaleString('en-IN')})
                   </span>
-                  <span className="text-[11px] text-rose-500 font-medium">
-                    Stock &le; 3 units
+                  <span className="text-[11px] text-rose-600 font-medium">
+                    Excluded from Net Sales
                   </span>
                 </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
+                  <span className="text-xs text-stone-500 uppercase tracking-wider font-semibold block">
+                    Net Sales
+                  </span>
+                  <span className="font-serif text-2xl font-bold text-stone-950 mt-1 block">
+                    ₹{analyticsData.netSales.toLocaleString('en-IN')}
+                  </span>
+                  <span className="text-[11px] text-emerald-700 font-medium">
+                    Gross minus cancelled/refunds
+                  </span>
+                </div>
+              </div>
+
+              {/* Detailed Sales Breakdown Table */}
+              <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                  <div>
+                    <h3 className="font-serif text-base font-bold text-stone-900">
+                      Period Breakdown ({analyticsRange.toUpperCase()})
+                    </h3>
+                    <p className="text-xs text-stone-500">
+                      Date-wise breakdown of order counts and revenue metrics.
+                    </p>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-stone-700 bg-stone-100 px-3 py-1 rounded-xl">
+                    {analyticsData.breakdownRows.length} Entries
+                  </span>
+                </div>
+
+                {analyticsData.breakdownRows.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-stone-50 text-stone-600 uppercase font-semibold">
+                        <tr>
+                          <th className="p-3">Period / Date</th>
+                          <th className="p-3 text-center">Orders</th>
+                          <th className="p-3 text-right">Gross Sales</th>
+                          <th className="p-3 text-right">Paid Amount</th>
+                          <th className="p-3 text-right">Pending Amount</th>
+                          <th className="p-3 text-center">Cancelled</th>
+                          <th className="p-3 text-right">Net Sales</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100 font-mono">
+                        {analyticsData.breakdownRows.map((row: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-stone-50/80 transition-colors">
+                            <td className="p-3 font-sans font-semibold text-stone-900">{row.label}</td>
+                            <td className="p-3 text-center font-bold text-stone-800">{row.orderCount}</td>
+                            <td className="p-3 text-right font-bold text-stone-900">₹{row.grossSales.toLocaleString('en-IN')}</td>
+                            <td className="p-3 text-right text-emerald-700">₹{row.paidSales.toLocaleString('en-IN')}</td>
+                            <td className="p-3 text-right text-amber-800">₹{row.pendingSales.toLocaleString('en-IN')}</td>
+                            <td className="p-3 text-center text-rose-700 font-bold">{row.cancelledCount}</td>
+                            <td className="p-3 text-right font-bold text-stone-950">₹{row.netSales.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center text-xs text-stone-400">
+                    No orders recorded for this period.
+                  </div>
+                )}
               </div>
 
               {/* Low Stock Callout Table */}
@@ -1965,12 +2311,17 @@ export const AdminPage: React.FC = () => {
                 <button
                   id="btn-admin-add-banner"
                   onClick={() => {
+                    const newBannerId = `banner_${Date.now()}`;
                     setEditingBanner({
+                      id: newBannerId,
                       title: 'New Collection Header',
                       subtitle: 'HAUTE COUTURE',
                       description: 'Exquisite bridal silks handwoven for grand celebrations.',
                       desktopImage:
                         'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1920&q=85',
+                      desktopImageStoragePath: '',
+                      mobileImage: '',
+                      mobileImageStoragePath: '',
                       buttonText: 'Explore Collection',
                       buttonUrl: '/shop',
                       position: 'hero',
@@ -1998,6 +2349,10 @@ export const AdminPage: React.FC = () => {
                           src={ban.desktopImage.trim()}
                           alt={ban.title}
                           className="w-full h-full object-cover opacity-80"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src =
+                              'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1200&q=85';
+                          }}
                         />
                       ) : (
                         <div className="w-full h-full bg-stone-900 flex items-center justify-center text-amber-200 text-xs font-bold">
@@ -3370,7 +3725,7 @@ export const AdminPage: React.FC = () => {
                   label="Desktop Banner Image *"
                   currentImageUrl={editingBanner.desktopImage}
                   currentStoragePath={editingBanner.desktopImageStoragePath}
-                  folder="banners/desktop"
+                  folder={`banners/${editingBanner.id || 'banner_new'}/desktop`}
                   onUpload={(url, path) => setEditingBanner({ ...editingBanner, desktopImage: url, desktopImageStoragePath: path })}
                   onRemove={() => setEditingBanner({ ...editingBanner, desktopImage: '', desktopImageStoragePath: '' })}
                   helperText="Recommended: Wide aspect ratio (21:9 or 16:9) for desktop displays."
@@ -3383,11 +3738,11 @@ export const AdminPage: React.FC = () => {
                   label="Mobile Banner Image (Optional)"
                   currentImageUrl={editingBanner.mobileImage}
                   currentStoragePath={editingBanner.mobileImageStoragePath}
-                  folder="banners/mobile"
+                  folder={`banners/${editingBanner.id || 'banner_new'}/mobile`}
                   onUpload={(url, path) => setEditingBanner({ ...editingBanner, mobileImage: url, mobileImageStoragePath: path })}
                   onRemove={() => setEditingBanner({ ...editingBanner, mobileImage: '', mobileImageStoragePath: '' })}
                   helperText="If empty, the desktop image will be used on mobile devices. Recommended: Portrait aspect (9:16)."
-                  aspectRatio="aspect-[9/16] w-32 mx-auto"
+                  aspectRatio="aspect-video w-full"
                 />
               </div>
 
@@ -3770,10 +4125,23 @@ export const AdminPage: React.FC = () => {
                       })}
                     </p>
                   )}
-                  <div className="pt-1 text-[11px] text-stone-600 flex items-center justify-between border-t border-rose-100">
+                  <div className="pt-2 text-[11px] text-stone-600 flex items-center justify-between border-t border-rose-100 flex-wrap gap-2">
                     <span>
                       Payment: <strong>{selectedOrderDetails.paymentMethod}</strong> ({selectedOrderDetails.paymentStatus})
                     </span>
+                    <button
+                      id="btn-delete-cancelled-order-trigger"
+                      type="button"
+                      onClick={() => {
+                        setOrderToDelete(selectedOrderDetails);
+                        setDeleteOrderError(null);
+                        setDeleteOrderConfirmModalOpen(true);
+                      }}
+                      className="bg-rose-700 hover:bg-rose-800 text-white text-[11px] uppercase tracking-wider font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Cancelled Order</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -4533,6 +4901,70 @@ export const AdminPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Cancelled Order Confirmation Modal */}
+      {deleteOrderConfirmModalOpen && orderToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs" onClick={() => setDeleteOrderConfirmModalOpen(false)} />
+          <div className="relative w-full max-w-md bg-white rounded-3xl p-6 z-10 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-700">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-serif text-base font-bold text-stone-900">
+                  Delete Order #{orderToDelete.orderNumber}?
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Customer: {orderToDelete.customerName}
+                </p>
+              </div>
+            </div>
+
+            {deleteOrderError && (
+              <div className="p-3 rounded-xl bg-rose-100 text-rose-900 text-xs font-medium">
+                {deleteOrderError}
+              </div>
+            )}
+
+            <p className="text-xs text-stone-700 leading-relaxed bg-stone-50 p-3 rounded-xl border border-stone-200">
+              <strong>Delete this cancelled order permanently?</strong><br />
+              This action cannot be undone. An audit record will be securely logged with your admin ID and email.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteOrderConfirmModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-stone-300 text-stone-700 text-xs font-semibold hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingOrder}
+                onClick={async () => {
+                  setDeleteOrderError(null);
+                  setIsDeletingOrder(true);
+                  try {
+                    await deleteCancelledOrder(orderToDelete.id);
+                    setDeleteOrderConfirmModalOpen(false);
+                    setOrderToDelete(null);
+                    setSelectedOrderDetails(null);
+                  } catch (err: any) {
+                    setDeleteOrderError(err?.message || 'Failed to delete cancelled order.');
+                  } finally {
+                    setIsDeletingOrder(false);
+                  }
+                }}
+                className="bg-rose-700 hover:bg-rose-800 disabled:opacity-50 text-white text-xs uppercase tracking-wider font-semibold px-5 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                {isDeletingOrder ? 'Deleting...' : 'Permanently Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

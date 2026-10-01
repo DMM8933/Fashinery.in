@@ -1,6 +1,15 @@
 import React from 'react';
 import { Order, OrderStatus } from '../types';
-import { Check, Dot, AlertTriangle } from 'lucide-react';
+import { 
+  Check, 
+  AlertTriangle, 
+  FileText, 
+  ShieldCheck, 
+  Package, 
+  Truck, 
+  MapPin, 
+  CheckCircle2 
+} from 'lucide-react';
 
 interface OrderStatusTimelineProps {
   order: Order;
@@ -78,14 +87,14 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({ order 
     return false;
   };
 
-  // Standard milestones
-  const standardMilestones: { key: OrderStatus; label: string }[] = [
-    { key: 'Order Placed', label: 'Order Placed' },
-    { key: 'Order Confirmed', label: 'Order Confirmed' },
-    { key: 'Packed', label: 'Packed' },
-    { key: 'Shipped', label: 'Shipped' },
-    { key: 'Out for Delivery', label: 'Out for Delivery' },
-    { key: 'Delivered', label: 'Delivered' },
+  // Standard milestones with elegant Lucide icons
+  const standardMilestones: { key: OrderStatus; label: string; icon: React.ComponentType<any> }[] = [
+    { key: 'Order Placed', label: 'Placed', icon: FileText },
+    { key: 'Order Confirmed', label: 'Confirmed', icon: ShieldCheck },
+    { key: 'Packed', label: 'Packed', icon: Package },
+    { key: 'Shipped', label: 'Shipped', icon: Truck },
+    { key: 'Out for Delivery', label: 'Out for Delivery', icon: MapPin },
+    { key: 'Delivered', label: 'Delivered', icon: CheckCircle2 },
   ];
 
   // Check if order is in a terminal/exceptional status
@@ -109,14 +118,14 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({ order 
 
   return (
     <div className="w-full space-y-4">
-      <span className="text-[11px] font-bold tracking-wider text-stone-400 uppercase block">
-        Order Progress Tracker
+      <span className="text-[10px] font-bold tracking-widest text-stone-400 uppercase block">
+        Order Status Progress
       </span>
 
       {/* Timeline Grid */}
       <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6 md:gap-2 p-1 pt-3">
         {/* Progress bar connector for desktop */}
-        <div className="absolute top-[23px] left-8 right-8 h-0.5 bg-stone-100 hidden md:block -z-10">
+        <div className="absolute top-[18px] left-8 right-8 h-0.5 bg-stone-100 hidden md:block -z-10">
           <div
             className="h-full bg-amber-900 transition-all duration-500"
             style={{
@@ -141,17 +150,18 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({ order 
 
           const timestamp = getTimestampForStatus(m.key);
           const formattedTime = formatMilestoneTime(timestamp);
+          const Icon = m.icon;
 
           // Render each step
           return (
             <div
               key={m.key}
-              className="flex md:flex-col items-center md:text-center flex-1 w-full gap-4 md:gap-2 relative"
+              className="flex md:flex-col items-center md:text-center flex-1 w-full gap-4 md:gap-2.5 relative"
             >
               {/* Connector line for mobile (vertical timeline connector) */}
               {idx < standardMilestones.length - 1 && (
                 <div
-                  className={`absolute left-[13px] top-7 bottom-[-24px] w-0.5 md:hidden -z-10 ${
+                  className={`absolute left-[17px] top-9 bottom-[-24px] w-0.5 md:hidden -z-10 ${
                     achieved ? 'bg-amber-900' : 'bg-stone-100'
                   }`}
                 />
@@ -159,20 +169,21 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({ order 
 
               {/* Milestone Bubble */}
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 border transition-all duration-300 ${
+                className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border transition-all duration-300 relative ${
                   isCurrent
-                    ? 'bg-amber-900 border-amber-900 text-white ring-4 ring-amber-100'
+                    ? 'bg-amber-900 border-amber-900 text-amber-100 ring-4 ring-amber-100'
                     : achieved
-                    ? 'bg-amber-50 border-amber-900 text-amber-900'
-                    : 'bg-white border-stone-200 text-stone-400'
+                    ? 'bg-amber-50 border-amber-900 text-amber-900 shadow-sm'
+                    : 'bg-white border-stone-200 text-stone-300'
                 }`}
               >
-                {isCurrent ? (
-                  <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                ) : achieved ? (
-                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                ) : (
-                  <span className="w-1.5 h-1.5 rounded-full bg-stone-300" />
+                <Icon className={`w-4 h-4 ${isCurrent ? 'animate-pulse' : ''}`} />
+                
+                {/* Tiny completed check badge on bubble */}
+                {achieved && !isCurrent && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-amber-900 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center border border-white text-[8px] font-bold">
+                    ✓
+                  </span>
                 )}
               </div>
 
@@ -183,8 +194,8 @@ export const OrderStatusTimeline: React.FC<OrderStatusTimelineProps> = ({ order 
                     isCurrent
                       ? 'text-amber-950 font-extrabold'
                       : achieved
-                      ? 'text-stone-900'
-                      : 'text-stone-400'
+                      ? 'text-stone-900 font-semibold'
+                      : 'text-stone-400 font-medium'
                   }`}
                 >
                   {m.label}

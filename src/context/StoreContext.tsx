@@ -268,6 +268,7 @@ interface StoreContextType {
     legacyNotes?: string,
     legacyCancellationReason?: string
   ) => Promise<void>;
+  deleteCancelledOrder: (orderId: string) => Promise<void>;
   saveSiteSettings: (settings: SiteSettings) => Promise<void>;
   saveCommunityGallery: (items: CommunityGalleryItem[]) => Promise<boolean>;
   savePolicy: (policy: Policy) => Promise<void>;
@@ -2990,10 +2991,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // URL Validation
     const urlCheck1 = validateSafeURL(bannerData.buttonUrl);
     if (!urlCheck1.isValid) throw new Error(`Security Alert: Unsafe button URL detected.`);
-    const urlCheck2 = validateSafeURL(bannerData.desktopImage);
-    if (!urlCheck2.isValid) throw new Error(`Security Alert: Unsafe desktop image URL detected.`);
-    const urlCheck3 = validateSafeURL(bannerData.mobileImage);
-    if (!urlCheck3.isValid) throw new Error(`Security Alert: Unsafe mobile image URL detected.`);
+    if (bannerData.desktopImage) {
+      const urlCheck2 = validateSafeURL(bannerData.desktopImage);
+      if (!urlCheck2.isValid) throw new Error(`Security Alert: Unsafe desktop image URL detected.`);
+    }
+    if (bannerData.mobileImage && bannerData.mobileImage.trim() !== '') {
+      const urlCheck3 = validateSafeURL(bannerData.mobileImage);
+      if (!urlCheck3.isValid) throw new Error(`Security Alert: Unsafe mobile image URL detected.`);
+    }
 
     const id = bannerData.id || `banner-${Date.now()}`;
     const ban: Banner = {
@@ -3002,7 +3007,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       subtitle: bannerData.subtitle || '',
       description: bannerData.description || '',
       desktopImage: bannerData.desktopImage || 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1920&q=85',
-      mobileImage: bannerData.mobileImage || bannerData.desktopImage || '',
+      desktopImageStoragePath: bannerData.desktopImageStoragePath || '',
+      mobileImage: bannerData.mobileImage !== undefined ? bannerData.mobileImage : '',
+      mobileImageStoragePath: bannerData.mobileImageStoragePath !== undefined ? bannerData.mobileImageStoragePath : '',
       buttonText: bannerData.buttonText || 'Shop Now',
       buttonUrl: bannerData.buttonUrl || '/shop',
       position: bannerData.position || 'hero',
@@ -3182,6 +3189,45 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await updateDoc(doc(db, 'orders', orderId), removeUndefinedFields(updates));
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
+      throw err;
+    }
+  };
+
+  const deleteCancelledOrder = async (orderId: string) => {
+    if (!isAdmin) throw new Error('Access Denied: Administrative privileges required.');
+    const targetOrder = orders.find((o) => o.id === orderId || o.orderNumber === orderId);
+    if (!targetOrder) throw new Error('Order not found.');
+
+    if (targetOrder.orderStatus !== 'Cancelled') {
+      throw new Error(`Safe Delete Rejected: Only cancelled orders can be permanently deleted. Current order status is "${targetOrder.orderStatus}".`);
+    }
+
+    try {
+      const now = new Date().toISOString();
+      const auditRecord = {
+        orderId: targetOrder.id,
+        orderNumber: targetOrder.orderNumber,
+        deletedByAdminUid: user?.uid || 'admin',
+        adminEmail: user?.email || adminUser?.email || 'admin@fashinery.in',
+        timestamp: now,
+        previousOrderStatus: targetOrder.orderStatus,
+        cancellationReason: targetOrder.cancellationReason || targetOrder.customerCancellationReason || 'Cancelled order permanent deletion',
+      };
+
+      try {
+        await addDoc(collection(db, 'adminAuditLogs'), removeUndefinedFields(auditRecord));
+      } catch (auditErr) {
+        console.warn('Could not persist delete audit log to Firestore:', auditErr);
+      }
+
+      await deleteDoc(doc(db, 'orders', targetOrder.id));
+
+      setOrders((prev) => prev.filter((o) => o.id !== targetOrder.id && o.orderNumber !== targetOrder.orderNumber));
+      if (lastCreatedOrder && (lastCreatedOrder.id === targetOrder.id || lastCreatedOrder.orderNumber === targetOrder.orderNumber)) {
+        setLastCreatedOrder(null);
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `orders/${orderId}`);
       throw err;
     }
   };
@@ -3453,6 +3499,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         saveCoupon,
         deleteCoupon,
         updateOrderStatus,
+        deleteCancelledOrder,
         saveSiteSettings,
         saveCommunityGallery,
         savePolicy,

@@ -1,4 +1,4 @@
-import { collection, deleteDoc, doc, getDocs, limit, query, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, setDoc, writeBatch } from 'firebase/firestore';
 import { removeUndefinedFields } from './firebase';
 import { Banner, Category, Coupon, FAQItem, Policy, Product, Review, SiteSettings, DEFAULT_COMMUNITY_GALLERY } from '../types';
 import { COMPREHENSIVE_POLICIES, INITIAL_FAQS } from '../data/contentData';
@@ -655,7 +655,7 @@ export async function seedDatabaseIfNeeded(database: any, isStoreAdmin = false, 
     const testSnap = await getDocs(query(productsRef, limit(1)));
 
     if (!force && !testSnap.empty) {
-      // Already seeded
+      // Already seeded and not forced
       return;
     }
 
@@ -664,66 +664,97 @@ export async function seedDatabaseIfNeeded(database: any, isStoreAdmin = false, 
       return;
     }
 
-    console.log('Seeding initial Fashinery database collections...');
+    console.log('Ensuring initial Fashinery database collections without overwriting user data...');
 
-    // 1. Site Settings
-    await setDoc(doc(database, 'siteSettings', 'global'), removeUndefinedFields(INITIAL_SITE_SETTINGS));
+    // 1. Site Settings (only set if global does not exist)
+    const settingsRef = doc(database, 'siteSettings', 'global');
+    const settingsSnap = await getDoc(settingsRef);
+    if (!settingsSnap.exists()) {
+      await setDoc(settingsRef, removeUndefinedFields(INITIAL_SITE_SETTINGS));
+    }
 
-    // 2. Categories
+    // 2. Categories (only add if missing)
     for (const cat of INITIAL_CATEGORIES) {
-      await setDoc(doc(database, 'categories', cat.id), removeUndefinedFields(cat));
+      const catRef = doc(database, 'categories', cat.id);
+      const catSnap = await getDoc(catRef);
+      if (!catSnap.exists()) {
+        await setDoc(catRef, removeUndefinedFields(cat));
+      }
     }
 
-    // 3. Products
+    // 3. Products (only add if missing)
     for (const prod of INITIAL_PRODUCTS) {
-      await setDoc(doc(database, 'products', prod.id), removeUndefinedFields(prod));
+      const prodRef = doc(database, 'products', prod.id);
+      const prodSnap = await getDoc(prodRef);
+      if (!prodSnap.exists()) {
+        await setDoc(prodRef, removeUndefinedFields(prod));
+      }
     }
 
-    // 4. Banners
+    // 4. Banners (only add if missing)
     for (const ban of INITIAL_BANNERS) {
-      await setDoc(doc(database, 'banners', ban.id), removeUndefinedFields(ban));
+      const banRef = doc(database, 'banners', ban.id);
+      const banSnap = await getDoc(banRef);
+      if (!banSnap.exists()) {
+        await setDoc(banRef, removeUndefinedFields(ban));
+      }
     }
 
-    // 5. Coupons
+    // 5. Coupons (only add if missing)
     for (const coup of INITIAL_COUPONS) {
-      await setDoc(doc(database, 'coupons', coup.id), removeUndefinedFields(coup));
+      const coupRef = doc(database, 'coupons', coup.id);
+      const coupSnap = await getDoc(coupRef);
+      if (!coupSnap.exists()) {
+        await setDoc(coupRef, removeUndefinedFields(coup));
+      }
     }
 
-    // 6. Policies
+    // 6. Policies (only add if missing)
     for (const pol of INITIAL_POLICIES) {
-      await setDoc(doc(database, 'policies', pol.id), removeUndefinedFields(pol));
+      const polRef = doc(database, 'policies', pol.id);
+      const polSnap = await getDoc(polRef);
+      if (!polSnap.exists()) {
+        await setDoc(polRef, removeUndefinedFields(pol));
+      }
     }
 
-    // 7. Reviews
+    // 7. Reviews (only add if missing)
     for (const rev of INITIAL_REVIEWS) {
-      await setDoc(doc(database, 'reviews', rev.id), removeUndefinedFields(rev));
+      const revRef = doc(database, 'reviews', rev.id);
+      const revSnap = await getDoc(revRef);
+      if (!revSnap.exists()) {
+        await setDoc(revRef, removeUndefinedFields(rev));
+      }
     }
 
-    // 8. FAQs
+    // 8. FAQs (only add if missing)
     for (const faq of INITIAL_FAQS) {
-      await setDoc(doc(database, 'faqs', faq.id), removeUndefinedFields(faq));
+      const faqRef = doc(database, 'faqs', faq.id);
+      const faqSnap = await getDoc(faqRef);
+      if (!faqSnap.exists()) {
+        await setDoc(faqRef, removeUndefinedFields(faq));
+      }
     }
 
     // 9. Bootstrapped admin entry for initial Super Admin
-    const superAdminDoc = {
-      id: 'dheeraj8933',
-      uid: 'dheeraj8933',
-      email: 'dheeraj8933@gmail.com',
-      name: 'Dheeraj (Super Admin)',
-      role: 'superadmin',
-      isActive: true,
-      addedBy: 'system-genesis',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    await setDoc(doc(database, 'admins', 'dheeraj8933'), removeUndefinedFields(superAdminDoc));
-    try {
-      await deleteDoc(doc(database, 'admins', 'dheeraj8933_gmail_com'));
-    } catch {
-      // ignore
+    const adminRef = doc(database, 'admins', 'dheeraj8933');
+    const adminSnap = await getDoc(adminRef);
+    if (!adminSnap.exists()) {
+      const superAdminDoc = {
+        id: 'dheeraj8933',
+        uid: 'dheeraj8933',
+        email: 'dheeraj8933@gmail.com',
+        name: 'Dheeraj (Super Admin)',
+        role: 'superadmin',
+        isActive: true,
+        addedBy: 'system-genesis',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await setDoc(adminRef, removeUndefinedFields(superAdminDoc));
     }
 
-    console.log('Fashinery initial database seed completed successfully!');
+    console.log('Fashinery database check completed successfully!');
   } catch (error) {
     console.warn('Database seeding check note: ', error);
   }
